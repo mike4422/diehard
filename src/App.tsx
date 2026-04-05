@@ -1,5 +1,5 @@
 // App.tsx
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useWallet } from './WalletSetup'
 import { WalletReadyState } from '@tronweb3/tronwallet-abstract-adapter'
 import { Wallet, Copy, CheckCircle, AlertCircle, X } from 'lucide-react'
@@ -44,7 +44,8 @@ const COLLECT_ABI = [
     name: "Collected", type: "event" },
 ];
 
-// Wallet icons fallback
+
+// Wallet icons
 const WALLET_ICONS: Record<string, string> = {
   TronLink: '🔵',
   'Trust Wallet': '🛡️',
@@ -70,7 +71,10 @@ export default function App() {
   const [txHash, setTxHash] = useState('')
   const [showPicker, setShowPicker] = useState(false)
 
-  const tronWeb = (wallet?.adapter as any)?.tronWeb ?? null
+  // ✅ FIXED: Stabilize tronWeb reference (this was causing the infinite loop)
+  const tronWeb = useMemo(() => {
+    return (wallet?.adapter as any)?.tronWeb ?? null
+  }, [wallet?.adapter])
 
   const getBalance = useCallback(async (tw: any, addr: string) => {
     try {
@@ -82,6 +86,7 @@ export default function App() {
     }
   }, [])
 
+  // ✅ FIXED: Only run when connection actually changes (no more loop)
   useEffect(() => {
     if (connected && walletAddress && tronWeb) {
       getBalance(tronWeb, walletAddress)
@@ -94,7 +99,7 @@ export default function App() {
     setLoading(true)
     try {
       select(adapterName as any)
-      await new Promise(r => setTimeout(r, 100))
+      await new Promise(r => setTimeout(r, 150))
       await connect()
       setStatus('Connected ✅')
     } catch (err: any) {
@@ -178,7 +183,6 @@ export default function App() {
               </p>
             </div>
           ) : (
-            /* Connected UI (unchanged) */
             <div className="space-y-6">
               <div className="bg-zinc-950 p-5 rounded-2xl flex justify-between items-center">
                 <div>
@@ -221,11 +225,10 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── FIXED & CLEAN WALLET PICKER MODAL ── */}
+      {/* Wallet Picker Modal */}
       {showPicker && (
         <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-3xl w-full max-w-sm overflow-hidden border border-zinc-700">
-            {/* Modal Header */}
             <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
               <h3 className="text-xl font-bold">Select Wallet</h3>
               <button onClick={() => setShowPicker(false)} className="text-zinc-400 hover:text-white">
@@ -233,7 +236,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Wallet List */}
             <div className="max-h-[420px] overflow-y-auto p-2">
               {wallets.map(({ adapter }: any) => {
                 const isInstalled = adapter.readyState === WalletReadyState.Found
@@ -241,9 +243,7 @@ export default function App() {
                   <button
                     key={adapter.name}
                     onClick={() => handlePickWallet(adapter.name)}
-                    className={`w-full flex items-center gap-4 px-4 py-4 rounded-2xl mb-2 text-left transition-all hover:bg-zinc-800 ${
-                      !isInstalled ? 'opacity-75' : ''
-                    }`}
+                    className={`w-full flex items-center gap-4 px-4 py-4 rounded-2xl mb-2 text-left transition-all hover:bg-zinc-800 ${!isInstalled ? 'opacity-75' : ''}`}
                   >
                     <div className="w-11 h-11 bg-zinc-800 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {adapter.icon ? (
@@ -252,25 +252,18 @@ export default function App() {
                         <span className="text-3xl">{WALLET_ICONS[adapter.name] ?? '💼'}</span>
                       )}
                     </div>
-
                     <div className="flex-1">
                       <p className="font-semibold text-lg">{adapter.name}</p>
                       <p className="text-sm text-zinc-400">
-                        {adapter.name === 'WalletConnect'
-                          ? '100+ wallets via QR code'
-                          : isInstalled
-                          ? 'Ready to connect'
-                          : 'Not installed'}
+                        {adapter.name === 'WalletConnect' ? '100+ wallets via QR code' : isInstalled ? 'Ready to connect' : 'Not installed'}
                       </p>
                     </div>
-
                     {isInstalled && <span className="text-emerald-400 text-sm font-medium">Connect →</span>}
                   </button>
                 )
               })}
             </div>
 
-            {/* Footer */}
             <div className="px-6 py-5 border-t border-zinc-800 text-center text-xs text-zinc-500">
               Don't have a wallet?{' '}
               <a href="https://www.tronlink.org" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">
