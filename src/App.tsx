@@ -248,9 +248,8 @@ export default function App() {
             </div>
 
             <div className="p-3 max-h-[60vh] overflow-y-auto">
-              {wallets.map(({ adapter }) => {
-                const isInstalled = adapter.readyState === WalletReadyState.Found ||
-                                    adapter.readyState === WalletReadyState.Loadable
+              {wallets.map(({ adapter }: any) => {
+                const isInstalled = adapter.readyState === WalletReadyState.Found
 
                 return (
                   <button

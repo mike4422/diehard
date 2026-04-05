@@ -9,7 +9,8 @@
 //   fixing the "Failed to publish custom payload" WalletConnect relay error.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { ReactNode, useMemo } from 'react'
+import { useMemo } from 'react'
+import type { ReactNode } from 'react'
 import {
   WalletProvider as TronWalletProvider,
   useWallet,
@@ -60,7 +61,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       themeMode: 'dark',
       allWallets: 'SHOW',        // ← Shows ALL wallets, not just Tron-declared ones
     }),
-  ], [])
+ ] as any, [])
 
   const onError = (error: Error) => {
     // Swallow "wallet not found" noise — user just doesn't have that extension installed
