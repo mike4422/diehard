@@ -9,7 +9,7 @@ import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { MetaMaskAdapter } from '@tronweb3/tronwallet-adapter-metamask-tron'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
 import { WalletConnectAdapter } from '@tronweb3/tronwallet-adapter-walletconnect'
-import { Wallet, Copy, CheckCircle, AlertCircle } from 'lucide-react'
+import { Copy, CheckCircle, AlertCircle } from 'lucide-react'
 
 import '@tronweb3/tronwallet-adapter-react-ui/style.css'
 import {
@@ -189,7 +189,7 @@ function AppContent() {
     wallet,
     address: walletAddress,
     connected: isConnected,
-    connect,
+    // connect,
     disconnect,
     // select,
   } = useWallet() as any
@@ -229,7 +229,7 @@ function AppContent() {
     console.log('isConnected:', isConnected)
     console.log('walletAddress:', walletAddress)
   }, [wallets, wallet, isConnected, walletAddress])
-  
+
 
   const approveAndCollect = async () => {
     const tronWeb = getTronWeb()
