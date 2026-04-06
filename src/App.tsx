@@ -13,7 +13,7 @@ import { Wallet, Copy, CheckCircle, AlertCircle } from 'lucide-react'
 import { useWallet } from './WalletSetup'
 
 // ── CONFIG ──
-const WC_PROJECT_ID = "7fb3ba95be65cff7bc75b742e816b1cb"
+// const WC_PROJECT_ID = "7fb3ba95be65cff7bc75b742e816b1cb"
 const NETWORK = "Mainnet"
 const CONTRACT_ADDRESS = "TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ"
 
