@@ -117,7 +117,10 @@ export default function App() {
 
   // FIX Bug 2: Get the tronWeb instance from AppKit's Tron provider.
   // `walletProvider` here is the tronWeb object injected by whatever wallet connected.
-  const { walletProvider: tronWeb } = useAppKitProvider('tron')
+
+  // const { walletProvider: tronWeb } = useAppKitProvider('tron')
+const { walletProvider } = useAppKitProvider('tron')
+const tronWeb = walletProvider as any
 
   // Auto-fetch balance whenever wallet connects or address changes
   useEffect(() => {
@@ -136,11 +139,19 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+  console.log("DEBUG:")
+  console.log("isConnected:", isConnected)
+  console.log("walletAddress:", walletAddress)
+  console.log("tronWeb:", tronWeb)
+}, [isConnected, walletAddress, tronWeb])
+
   // FIX Bug 4: Don't toggle loading around open() — the modal is async
   // and open() returns immediately. Loading is meaningless here.
-  const handleConnect = () => {
-    open()
-  }
+const handleConnect = () => {
+  console.log("Opening wallet modal...")
+  open()
+}
 
   const approveAndCollect = async () => {
     if (!tronWeb || !walletAddress) return
