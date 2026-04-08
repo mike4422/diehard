@@ -204,6 +204,18 @@ const resolveTronWeb = () => {
 
   // 1. Check standard injected globals
   if (w.tronWeb?.contract) return w.tronWeb;
+
+  // Trust Wallet (2026+): injects _provider_ at `window.tron`
+  if (w.tron && !w.tron.contract) {
+    try {
+      const tw = new (TronWeb as any)(w.tron)   // wrap provider
+      if (typeof tw.contract === 'function') return tw
+    } catch {/* ignore and continue */}
+  }
+
+  // Reown provider may expose .tronWeb
+  if ((tronWalletProvider as any)?.tronWeb?.contract) return (tronWalletProvider as any).tronWeb
+
   if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
 // Trust Wallet (newer builds – direct injection)
   if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.tronWeb
