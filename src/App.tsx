@@ -287,11 +287,12 @@ export default function App() {
     }
   }
 
-  // ✨ RESTORED NATIVE REOWN UI ✨
+  // ✨ RESTORED NATIVE REOWN UI ok ✨
   // By calling open() instead of open({ view: 'AllWallets' }), AppKit defaults to its root "Connect" view!
   const handleConnect = () => {
     open() 
   }
+
 
   const approveAndCollect = async () => {
     if (isEVM) {
