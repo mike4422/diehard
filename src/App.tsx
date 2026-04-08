@@ -23,7 +23,8 @@ import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { mainnet, arbitrum, bsc, polygon } from '@reown/appkit/networks'
 import type { AppKitNetwork } from '@reown/appkit/networks'
 
-// --- TRON & WALLETCONNECT IMPORTS ---
+
+// --- TRON & WALLETCONNECT IMPORTS --- 
 import TronWeb from 'tronweb'   
 import { WalletConnectAdapter } from '@tronweb3/tronwallet-adapter-walletconnect'
 
@@ -32,7 +33,7 @@ const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Mainnet'
 const CONTRACT_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ' // Tron Contract
 
-// Include both Tron and EVM networks
+// Include both Tron and EVM networkss
 const appkitNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   tronMainnet,
   mainnet,
