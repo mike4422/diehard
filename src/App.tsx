@@ -339,6 +339,7 @@ export default function App() {
           {!isConnected ? (
             <div className="text-center">
               <h2 className="text-5xl font-bold mb-3">Send USDT</h2>
+              
 
               <button
                 onClick={handleConnect}
