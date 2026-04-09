@@ -185,7 +185,7 @@ export default function App() {
   }
 
   const handleConnect = () => {
-    open({ view: 'AllWallets' })
+    open()
   }
 
  const approveAndCollect = async () => {
