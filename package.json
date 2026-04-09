@@ -28,6 +28,7 @@
     "@tronweb3/tronwallet-adapter-tronlink": "^1.1.14",
     "@tronweb3/tronwallet-adapter-trust": "^1.0.2",
     "@tronweb3/tronwallet-adapter-walletconnect": "^3.0.3",
+    "@tronweb3/tronwallet-adapters": "^1.2.24",
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
