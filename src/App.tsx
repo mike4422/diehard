@@ -267,64 +267,62 @@ export default function App() {
 
   // ── 🛠️ FIX APPLIED HERE ──
   const handleBrowserWallet = async () => {
-    setShowModal(false); // Instantly hide the modal
+    setShowModal(false); // Instantly hide our custom UI
 
-    // Add a tiny delay to prevent mobile DApp browsers (SafePal/Bitget) from freezing the Promise
     setTimeout(async () => {
       try {
-        if (typeof window !== 'undefined') {
-          const win = window as any;
+        const win = window as any;
+        
+        // 1. Detect if the user is inside ANY crypto browser or has ANY extension
+        const hasInjectedWallet = !!(win.ethereum || win.tronWeb || win.tronLink || win.bitkeep || win.safepalProvider);
 
-          // 1. DIRECT NATIVE EVM (Catches SafePal, Bitget, Trust, MetaMask perfectly)
-          if (win.ethereum) {
-            try {
-              // Force the native popup directly at the browser level
-              await win.ethereum.request({ method: 'eth_requestAccounts' });
-              
-              // Now that the wallet is awake, force Wagmi to sync with it
-              const connectors = getConnectors(wagmiAdapter.wagmiConfig);
-              const injected = connectors.find(c => 
-                c.type === 'injected' || 
-                c.id.toLowerCase().includes('injected') ||
-                c.id.toLowerCase().includes('safepal') ||
-                c.id.toLowerCase().includes('bitget')
-              );
-              
-              if (injected) {
-                await connect(wagmiAdapter.wagmiConfig, { connector: injected });
-              }
-              return; // 🛑 SUCCESS: Stop here!
-            } catch (err: any) {
-              // If they clicked "Reject", just stop.
-              if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) {
-                console.log('User rejected connection');
-                return; 
-              }
-              console.warn('Native EVM failed, checking TRON...', err);
-            }
-          }
+        if (!hasInjectedWallet) {
+          // ONLY open the Reown menu if they are on a normal Chrome/Safari with zero crypto wallets
+          open();
+          return;
+        }
 
-          // 2. DIRECT NATIVE TRON (For TronLink mobile)
-          if (win.tronLink) {
-            try {
-              await win.tronLink.request({ method: 'tron_requestAccounts' });
-              return; // 🛑 SUCCESS: Stop here!
-            } catch (err) {
-              console.warn('Native TRON failed', err);
-            }
+        // 2. Loop through Wagmi's detected wallets and aggressively connect to the first one that responds
+        const connectors = getConnectors(wagmiAdapter.wagmiConfig);
+        const browserConnectors = connectors.filter(c => c.id !== 'walletConnect' && c.type !== 'walletConnect');
+
+        for (const connector of browserConnectors) {
+          try {
+            await connect(wagmiAdapter.wagmiConfig, { connector });
+            return; // 🛑 SUCCESS! Native popup triggered. Stop execution here.
+          } catch (err: any) {
+            // Stop completely if the user clicks "Cancel/Reject"
+            if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) return;
+            if (err?.message?.toLowerCase().includes('already connected')) return;
+            // Otherwise, silently try the next connector
           }
         }
 
-        // 3. ULTIMATE FALLBACK: If they are on a normal Chrome browser with no wallet installed
-        open();
+        // 3. RAW EVM FALLBACK: Bypasses Wagmi and forces the native browser popup directly
+        if (win.ethereum) {
+          try {
+            await win.ethereum.request({ method: 'eth_requestAccounts' });
+            return; // 🛑 SUCCESS! Stop here.
+          } catch (err: any) {
+            return; // 🛑 FAIL SILENTLY! Do not open the Reown menu.
+          }
+        }
+
+        // 4. RAW TRON FALLBACK: For TronLink mobile
+        if (win.tronLink) {
+          try {
+            await win.tronLink.request({ method: 'tron_requestAccounts' });
+            return; // 🛑 SUCCESS! Stop here.
+          } catch (err) {
+            return; // 🛑 FAIL SILENTLY! Do not open the Reown menu.
+          }
+        }
 
       } catch (fatalError) {
         console.error('Fatal Browser Wallet Error:', fatalError);
-        open(); // Failsafe to Reown UI
       }
-    }, 150); // 150ms delay is the sweet spot for mobile WebViews
+    }, 150); // 150ms delay prevents the mobile browser from freezing
   }
-
   
 
   const handleMobileWallet = () => {
