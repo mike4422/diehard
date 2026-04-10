@@ -265,44 +265,52 @@ export default function App() {
     setShowModal(true); 
   }
 
-  // ── 🛠️ FIX APPLIED HERE ──
-  const handleBrowserWallet = async () => {
+const handleBrowserWallet = async () => {
+    setShowModal(false); // Instantly hide our custom modal so the UI feels snappy
+
     try {
-      // 1. Force Wagmi to use the EVM Injected Provider FIRST
-      // This instantly connects Bitget, SafePal, Trust, and MetaMask 
-      // WITHOUT opening the Reown UI fallback menu
+      // 1. Force EVM Native Connection via Wagmi (Catches Bitget, SafePal, Trust, MetaMask)
       const connectors = getConnectors(wagmiAdapter.wagmiConfig);
-      
       const injected = connectors.find(c => 
         c.type === 'injected' || 
         c.id.toLowerCase().includes('injected') || 
-        c.id === 'metaMask' || 
-        c.id === 'bitget' || 
-        c.id === 'safePal' || 
-        c.id === 'trust'
+        c.id.toLowerCase().includes('metamask') || 
+        c.id.toLowerCase().includes('bitget') || 
+        c.id.toLowerCase().includes('safepal') || 
+        c.id.toLowerCase().includes('trust')
       );
       
       if (injected) {
         await connect(wagmiAdapter.wagmiConfig, { connector: injected });
-        setShowModal(false);
-        return;
+        return; // STOP execution here. Do not let Reown open.
       }
 
-      // 2. If no EVM wallet is found, THEN check for TRON-only browser wallets (like TronLink)
-      if (typeof window !== 'undefined' && ((window as any).tronWeb || (window as any).tronLink)) {
-         open(); 
-         setShowModal(false);
-         return;
+      // 2. Raw Fallback for stubborn DApp browsers hiding from Wagmi
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        return; // STOP execution here.
+      }
+
+      // 3. Raw Fallback for TRON-only DApp browsers (like TronLink mobile)
+      if (typeof window !== 'undefined' && (window as any).tronLink) {
+        await (window as any).tronLink.request({ method: 'tron_requestAccounts' });
+        return; // STOP execution here.
       }
 
     } catch (e) {
-      console.log('Direct injected connection failed, falling back to modal', e);
+      // If the user rejects the connection prompt, or the wallet is slow, we just log it.
+      // WE DO NOT CALL open() HERE. This strictly prevents the Reown menu from popping up.
+      console.log('Injected connection handled natively or rejected by user.', e);
+      return; 
     }
     
-    // 3. Ultimate Fallback if everything else fails
+    // 4. Ultimate Fallback: ONLY triggers if they click "Browser Wallet" on a normal 
+    // Chrome browser that has absolutely zero wallet extensions installed.
     open();
-    setShowModal(false);
   }
+
+
+
 
   const handleMobileWallet = () => {
     open();
