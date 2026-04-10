@@ -34,7 +34,7 @@ const NETWORK = 'Mainnet'
 
 // 🔥 CONTRACT ADDRESSES
 const TRON_CONTRACT_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
-const EVM_CONTRACT_ADDRESS = '0x...PASTE_YOUR_EVM_CONTRACT_ADDRESS_HERE...' // Add your deployed EVM contract
+const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE' // Add your deployed EVM contract
 
 const appkitNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   tronMainnet,
@@ -56,6 +56,7 @@ const NETWORK_CONFIG = {
 }
 
 const EVM_USDT: Record<number, string> = {
+  11155111: '0xBA582bacb9b8ebbd182A1c9Edac08F3071d9ac5e', // Sepolia
   1: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
   56: '0x55d398326f99059fF775485246999027B3197955',
   137: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
