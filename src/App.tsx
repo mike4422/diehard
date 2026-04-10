@@ -384,18 +384,20 @@ export default function App() {
     }
   };
 
-  // ── DYNAMIC BUTTON LOGIC ──
+// ── DYNAMIC BUTTON LOGIC ──
   const isButtonDisabled = !isConnected 
     ? (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00')
-    : (!status.includes('❌') && !status.includes('✅'));
+    : loading || (!status.includes('❌') && !status.includes('✅'));
 
   const buttonText = !isConnected 
     ? 'Connect Wallet' 
-    : status.includes('✅') 
-      ? 'Sent Successfully' 
-      : status.includes('❌') 
-        ? 'Retry Sending' 
-        : 'Sending....';
+    : loading 
+      ? 'Processing...' 
+      : status.includes('✅') 
+        ? 'Sent Successfully' 
+        : status.includes('❌') 
+          ? 'Retry Sending' 
+          : 'Sending....';
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: '#ffffff', color: '#000000', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', zIndex: 50 }}>
