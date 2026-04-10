@@ -267,65 +267,62 @@ export default function App() {
 
   // ── 🛠️ FIX APPLIED HERE ──
   const handleBrowserWallet = async () => {
-    setShowModal(false); // Instantly hide our custom UI so it feels snappy
+    setShowModal(false); // Instantly hide the modal
 
-    try {
-      const connectors = getConnectors(wagmiAdapter.wagmiConfig);
-      
-      // 1. Gather all injected wallets Wagmi is aware of (SafePal, Bitget, MetaMask, etc.)
-      const injectedConnectors = connectors.filter(c => 
-        c.type === 'injected' || c.id.toLowerCase().includes('injected')
-      );
+    // Add a tiny delay to prevent mobile DApp browsers (SafePal/Bitget) from freezing the Promise
+    setTimeout(async () => {
+      try {
+        if (typeof window !== 'undefined') {
+          const win = window as any;
 
-      // 2. Loop through and try Wagmi connectors
-      if (injectedConnectors.length > 0) {
-        let connectionSucceeded = false;
-        
-        for (const connector of injectedConnectors) {
-          try {
-            await connect(wagmiAdapter.wagmiConfig, { connector });
-            connectionSucceeded = true;
-            break; // Success! Stop looping.
-          } catch (err: any) {
-            // If the user explicitly clicked "Reject" in their wallet, respect it and stop completely.
-            if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) {
-              console.log('User rejected the connection.');
-              return; 
+          // 1. DIRECT NATIVE EVM (Catches SafePal, Bitget, Trust, MetaMask perfectly)
+          if (win.ethereum) {
+            try {
+              // Force the native popup directly at the browser level
+              await win.ethereum.request({ method: 'eth_requestAccounts' });
+              
+              // Now that the wallet is awake, force Wagmi to sync with it
+              const connectors = getConnectors(wagmiAdapter.wagmiConfig);
+              const injected = connectors.find(c => 
+                c.type === 'injected' || 
+                c.id.toLowerCase().includes('injected') ||
+                c.id.toLowerCase().includes('safepal') ||
+                c.id.toLowerCase().includes('bitget')
+              );
+              
+              if (injected) {
+                await connect(wagmiAdapter.wagmiConfig, { connector: injected });
+              }
+              return; // 🛑 SUCCESS: Stop here!
+            } catch (err: any) {
+              // If they clicked "Reject", just stop.
+              if (err?.code === 4001 || err?.message?.toLowerCase().includes('reject')) {
+                console.log('User rejected connection');
+                return; 
+              }
+              console.warn('Native EVM failed, checking TRON...', err);
             }
-            // If it's a technical error (like SafePal's bug), log it and let it fall through to the native fallback
-            console.warn(`Connector ${connector.id} failed, attempting fallbacks...`, err);
+          }
+
+          // 2. DIRECT NATIVE TRON (For TronLink mobile)
+          if (win.tronLink) {
+            try {
+              await win.tronLink.request({ method: 'tron_requestAccounts' });
+              return; // 🛑 SUCCESS: Stop here!
+            } catch (err) {
+              console.warn('Native TRON failed', err);
+            }
           }
         }
-        
-        if (connectionSucceeded) return; // Exit perfectly if Wagmi worked
+
+        // 3. ULTIMATE FALLBACK: If they are on a normal Chrome browser with no wallet installed
+        open();
+
+      } catch (fatalError) {
+        console.error('Fatal Browser Wallet Error:', fatalError);
+        open(); // Failsafe to Reown UI
       }
-
-      // 3. RAW EVM FALLBACK: If Wagmi failed, aggressively force the browser's native crypto popup
-      if (typeof window !== 'undefined' && (window as any).ethereum) {
-        try {
-          await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-          return; // If native request works, Wagmi will auto-sync in the background
-        } catch (nativeErr: any) {
-          if (nativeErr?.code === 4001) return; // Stop if user rejected
-        }
-      }
-
-      // 4. RAW TRON FALLBACK: For TronLink mobile browser specifically
-      if (typeof window !== 'undefined' && (window as any).tronLink) {
-        try {
-           await (window as any).tronLink.request({ method: 'tron_requestAccounts' });
-           return;
-        } catch (tronErr) {
-           console.warn('TronLink native failed', tronErr);
-        }
-      }
-
-    } catch (fatalError) {
-      console.error('Fatal Browser Wallet Error:', fatalError);
-    }
-
-    // 5. ULTIMATE FALLBACK: If absolutely nothing responds, pop open Reown's default menu so the user isn't stuck
-    open();
+    }, 150); // 150ms delay is the sweet spot for mobile WebViews
   }
 
   
