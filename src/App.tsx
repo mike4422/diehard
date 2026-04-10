@@ -339,7 +339,7 @@ export default function App() {
     : loading || (!status.includes('❌') && !status.includes('✅'));
 
   const buttonText = !isConnected 
-    ? 'Connect Wallet' 
+    ? 'Send' 
     : loading || (!status.includes('❌') && !status.includes('✅'))
       ? 'Sending...' 
       : status.includes('✅') 
