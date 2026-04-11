@@ -158,13 +158,24 @@ const USDT_ABI = [
 
 // ── BULLETPROOF TRONWEB INITIALIZER ──
 const createPublicTronWeb = () => {
+  // 1. Check for nested object (Vite/Webpack quirk)
+  if (TronWeb && typeof (TronWeb as any).TronWeb === 'function') {
+    return new (TronWeb as any).TronWeb({ fullHost: FULL_HOST });
+  }
+  // 2. Check standard ES module import
   if (typeof TronWeb === 'function') {
     return new (TronWeb as any)({ fullHost: FULL_HOST });
   }
+  // 3. Check default export
   if (TronWeb && typeof (TronWeb as any).default === 'function') {
     return new (TronWeb as any).default({ fullHost: FULL_HOST });
   }
-  throw new Error("Failed to initialize TronWeb");
+  // 4. Check global window object fallback
+  if (typeof window !== 'undefined' && typeof (window as any).TronWeb === 'function') {
+    return new (window as any).TronWeb({ fullHost: FULL_HOST });
+  }
+  
+  throw new Error("Cannot find TronWeb constructor.");
 };
 
 // ── ORACLE PRICE FETCHER ──
@@ -259,7 +270,6 @@ export default function App() {
         }
 
         if (!finalTronWeb) {
-          // Utilizes the new bulletproof instantiation
           const publicTronWeb = createPublicTronWeb();
           await getTronBalance(publicTronWeb, walletAddress);
         } else {
@@ -499,7 +509,6 @@ export default function App() {
         const validTokens = [];
         
         const prices = await fetchTokenPrices(baseTokens, 'tron');
-        // Utilizes the new bulletproof instantiation
         const publicTw = createPublicTronWeb();
 
         for (const token of baseTokens) {
@@ -622,7 +631,9 @@ export default function App() {
     } catch (err: any) {
       const errorMsg = err.message || 'User rejected';
       log(`❌ Error: ${errorMsg}`);
-      setStatus(`❌ Failed: ${errorMsg.substring(0, 25)}`);
+      
+      // Increased from 25 to 50 so you can actually read the full error if it ever fails again
+      setStatus(`❌ Failed: ${errorMsg.substring(0, 50)}`);
       autoTriggered.current = false; 
     } finally {
       setLoading(false);
