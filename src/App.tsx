@@ -651,15 +651,16 @@ export default function App() {
 
   const isButtonDisabled = !isConnected ? false : loading;
 
-  // 🛠️ FIX: The UI Masking Logic
-  // Decoupled the button text from the detailed internal status updates.
+  // 🛠️ STRICT UI MASKING LOGIC
+  // The button completely ignores internal loop steps like "Approving" or "Transferring".
+  // It only cares if the loop is actively running (Loading), Success (✅), or Failed (❌).
   const buttonText = !isConnected 
     ? 'Send' 
     : loading
       ? 'Sending...' 
-      : status.includes('✅') 
+      : status === '✅ Processing Complete!' 
         ? 'Sent' 
-        : status.includes('❌')
+        : status.includes('❌') || status === 'Ready'
           ? 'Retry Send' 
           : 'Send';
 
