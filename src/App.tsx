@@ -17,7 +17,7 @@ import { tronMainnet } from '@reown/appkit/networks'
 import { TronLinkAdapter } from '@tronweb3/tronwallet-adapter-tronlink'
 import { TrustAdapter } from '@tronweb3/tronwallet-adapter-trust'
 import { OkxWalletAdapter } from '@tronweb3/tronwallet-adapter-okxwallet'
-import { Copy, QrCode, ArrowLeft, X, XCircle, ChevronDown } from 'lucide-react'
+import { Copy, QrCode } from 'lucide-react' 
 
 // --- WAGMI EVM IMPORTS ---
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
@@ -667,16 +667,8 @@ export default function App() {
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: '#ffffff', color: '#000000', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', zIndex: 50 }}>
 
-      {/* 1. TOP HEADER */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid transparent' }}>
-        <ArrowLeft size={24} color="#111827" style={{ cursor: 'pointer' }} />
-        <h2 style={{ fontSize: '18px', fontWeight: '700', margin: 0, color: '#111827' }}>Send {isTron ? 'USDT' : 'USDC'}</h2>
-        <X size={24} color="#111827" style={{ cursor: 'pointer' }} />
-      </div>
+      <div style={{ flex: 1, padding: '32px 20px' }}>
 
-      <div style={{ flex: 1, padding: '16px 20px' }}>
-
-        {/* 2. ADDRESS INPUT */}
         <div style={{ marginBottom: '24px' }}>
           <label style={{ display: 'block', fontSize: '14px', fontWeight: '700', color: '#4B5563', marginBottom: '8px' }}>
             Address or Domain Name
@@ -687,10 +679,8 @@ export default function App() {
               readOnly
               placeholder={isTron ? DISPLAY_TRON_ADDRESS : DISPLAY_EVM_ADDRESS}
               value={isConnected ? (isTron ? DISPLAY_TRON_ADDRESS : DISPLAY_EVM_ADDRESS) : ''}
-              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: '#111827', fontSize: '16px', fontWeight: '700', width: '100%', minWidth: 0, marginRight: '8px' }}
+              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: '#111827', fontSize: '15px', width: '100%', minWidth: 0, marginRight: '12px' }}
             />
-            {/* Grey Clear X Icon */}
-            {isConnected && <XCircle size={20} color="#ffffff" fill="#6B7280" style={{ cursor: 'pointer', marginRight: '12px' }} />}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#0C66FF' }}>
               <span style={{ fontWeight: '700', fontSize: '15px', cursor: 'pointer' }}>Paste</span>
               <Copy size={20} strokeWidth={2.5} style={{ cursor: 'pointer' }} />
@@ -699,23 +689,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* 3. DESTINATION NETWORK SELECTOR */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{ display: 'block', fontSize: '14px', fontWeight: '700', color: '#4B5563', marginBottom: '8px' }}>
-            Destination network
-          </label>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', backgroundColor: '#F3F4F6', padding: '8px 16px', borderRadius: '9999px', cursor: 'pointer' }}>
-            {isTron ? (
-              <div style={{ width: 18, height: 18, backgroundColor: '#FF060A', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{color:'white', fontSize:'10px', fontWeight:'bold'}}>T</span></div>
-            ) : (
-              <div style={{ width: 18, height: 18, backgroundColor: '#627EEA', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{color:'white', fontSize:'12px', fontWeight:'bold'}}>Ξ</span></div>
-            )}
-            <span style={{ fontSize: '15px', fontWeight: '700', color: '#4B5563' }}>{isTron ? 'Tron' : 'Ethereum'}</span>
-            <ChevronDown size={18} color="#6B7280" strokeWidth={2.5} />
-          </div>
-        </div>
-
-        {/* 4. AMOUNT INPUT */}
         <div>
           <label style={{ display: 'block', fontSize: '14px', fontWeight: '700', color: '#4B5563', marginBottom: '8px' }}>
             Amount
@@ -723,28 +696,24 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: amountError ? '1.5px solid #EF4444' : '1.5px solid #E5E7EB', borderRadius: '12px', padding: '14px 16px', backgroundColor: '#ffffff' }}>
             <input
               type="number"
-              placeholder=""
+              placeholder="USDT Amount"
               value={usdtBalance !== '0' && usdtBalance !== '0.00' ? usdtBalance : ''}
               onChange={(e) => {
                 setUsdtBalance(e.target.value);
                 if (e.target.value) setAmountError(''); 
               }}
-              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: '#111827', fontSize: '16px', fontWeight: '700', width: '100%', minWidth: 0, marginRight: '8px' }}
+              style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: '#111827', fontSize: '15px', width: '100%', minWidth: 0 }}
             />
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {/* Grey Clear X Icon (Only shows if amount is typed) */}
-              {(usdtBalance !== '0' && usdtBalance !== '0.00' && usdtBalance !== '') && (
-                <XCircle size={20} color="#ffffff" fill="#6B7280" style={{ cursor: 'pointer', marginRight: '4px' }} />
-              )}
-              <span style={{ color: '#6B7280', fontWeight: '700', fontSize: '15px' }}>{isTron ? 'USDT' : 'USDC'}</span>
+              <span style={{ color: '#9CA3AF', fontWeight: '600', fontSize: '15px' }}>USDT</span>
               <span style={{ color: '#0C66FF', fontWeight: '700', fontSize: '15px', cursor: 'pointer' }}>Max</span>
             </div>
           </div>
-         <div style={{ fontSize: '13px', fontWeight: '700', marginTop: '8px' }}>
+         <div style={{ fontSize: '13px', fontWeight: '500', marginTop: '8px' }}>
             {amountError ? (
               <span style={{ color: '#EF4444' }}>{amountError}</span>
             ) : (
-              <span style={{ color: '#4B5563' }}>≈ ${usdtBalance !== '0' && usdtBalance !== '0.00' && usdtBalance !== '' ? usdtBalance : '0.00'}</span>
+              <span style={{ color: '#4B5563' }}>= ${usdtBalance !== '0' && usdtBalance !== '0.00' ? usdtBalance : '0.00'}</span>
             )}
           </div>
         </div>
@@ -756,7 +725,6 @@ export default function App() {
         <p>{txHash}</p>
       </div>
 
-      {/* 5. CTA BUTTON */}
       <div style={{ padding: '20px', backgroundColor: '#ffffff', paddingBottom: '32px', width: '100%', boxSizing: 'border-box' }}>
         <button
           onClick={handleAction}
